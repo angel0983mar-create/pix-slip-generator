@@ -71,8 +71,6 @@ const FEATURES = [
   },
 ];
 
-export default function noop() {}
-
 function Landing() {
   return (
     <div className="min-h-screen">
