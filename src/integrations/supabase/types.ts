@@ -14,7 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      orders: {
+        Row: {
+          amount: number
+          created_at: string
+          customer_contact: string | null
+          customer_name: string
+          description: string | null
+          due_date: string | null
+          id: string
+          items: Json
+          notes: string | null
+          order_number: number
+          paid_at: string | null
+          payment_method: string
+          pix_payload: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          customer_contact?: string | null
+          customer_name?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          items?: Json
+          notes?: string | null
+          order_number?: number
+          paid_at?: string | null
+          payment_method?: string
+          pix_payload?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          customer_contact?: string | null
+          customer_name?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          items?: Json
+          notes?: string | null
+          order_number?: number
+          paid_at?: string | null
+          payment_method?: string
+          pix_payload?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          city: string
+          created_at: string
+          document: string | null
+          id: string
+          merchant_name: string
+          next_order_number: number
+          open_order_limit: number
+          phone: string | null
+          pix_key: string | null
+          pix_key_type: string
+          plan: string
+          print_layout: string
+          receipt_footer: string | null
+          store_name: string
+          updated_at: string
+        }
+        Insert: {
+          city?: string
+          created_at?: string
+          document?: string | null
+          id: string
+          merchant_name?: string
+          next_order_number?: number
+          open_order_limit?: number
+          phone?: string | null
+          pix_key?: string | null
+          pix_key_type?: string
+          plan?: string
+          print_layout?: string
+          receipt_footer?: string | null
+          store_name?: string
+          updated_at?: string
+        }
+        Update: {
+          city?: string
+          created_at?: string
+          document?: string | null
+          id?: string
+          merchant_name?: string
+          next_order_number?: number
+          open_order_limit?: number
+          phone?: string | null
+          pix_key?: string | null
+          pix_key_type?: string
+          plan?: string
+          print_layout?: string
+          receipt_footer?: string | null
+          store_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
