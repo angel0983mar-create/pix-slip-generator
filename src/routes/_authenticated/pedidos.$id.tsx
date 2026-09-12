@@ -91,15 +91,16 @@ function OrderDetail() {
   }
 
   async function regeneratePix() {
-    if (!profile.pix_key) {
+    const store = profile!;
+    if (!store.pix_key) {
       toast.error("Cadastre sua chave Pix em Configurações.");
       return;
     }
     const payload = buildPixPayload({
-      key: profile.pix_key,
-      keyType: profile.pix_key_type,
-      merchantName: profile.merchant_name || profile.store_name,
-      city: profile.city,
+      key: store.pix_key,
+      keyType: store.pix_key_type,
+      merchantName: store.merchant_name || store.store_name,
+      city: store.city,
       amount: total,
       txid: `PED${String(order!.order_number).padStart(5, "0")}`,
       description: order!.description ?? "",
