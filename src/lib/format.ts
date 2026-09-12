@@ -22,7 +22,10 @@ export function formatDate(value?: string | null): string {
 }
 
 export function parseAmount(input: string): number {
-  const clean = input.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", ".");
+  const clean = input
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\.(?=\d{3}\b)/g, "")
+    .replace(",", ".");
   const parsed = Number.parseFloat(clean);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }

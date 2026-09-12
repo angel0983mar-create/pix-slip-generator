@@ -17,7 +17,10 @@ export const Route = createFileRoute("/_authenticated/caixa")({
         content: "Fechamento de caixa: total recebido por forma de pagamento e pedidos em aberto.",
       },
       { property: "og:title", content: "Caixa do dia | Comprovante Pix" },
-      { property: "og:description", content: "Veja o total recebido no dia e o que falta receber." },
+      {
+        property: "og:description",
+        content: "Veja o total recebido no dia e o que falta receber.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

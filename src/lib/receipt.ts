@@ -1,5 +1,12 @@
 import { formatBRL, formatDate, formatDateTime } from "./format";
-import { orderTotal, paymentLabel, type DocMode, type Order, type PrintLayout, type Profile } from "./domain";
+import {
+  orderTotal,
+  paymentLabel,
+  type DocMode,
+  type Order,
+  type PrintLayout,
+  type Profile,
+} from "./domain";
 
 export interface ReceiptContext {
   order: Order;
@@ -80,7 +87,9 @@ export function buildReceiptHtml(ctx: ReceiptContext): string {
   <div class="head">
     <h1>${escapeHtml(profile.store_name)}</h1>
     <div class="muted">${escapeHtml(
-      [profile.merchant_name, profile.document, profile.phone, profile.city].filter(Boolean).join(" • "),
+      [profile.merchant_name, profile.document, profile.phone, profile.city]
+        .filter(Boolean)
+        .join(" • "),
     )}</div>
   </div>
 

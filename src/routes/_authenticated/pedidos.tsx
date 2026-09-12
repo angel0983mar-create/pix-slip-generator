@@ -43,7 +43,10 @@ function OrdersPage() {
     .filter((o) => o.status === "aberto")
     .reduce((acc, o) => acc + orderTotal(o), 0);
   const todayPaid = orders
-    .filter((o) => o.status === "pago" && o.paid_at?.slice(0, 10) === new Date().toISOString().slice(0, 10))
+    .filter(
+      (o) =>
+        o.status === "pago" && o.paid_at?.slice(0, 10) === new Date().toISOString().slice(0, 10),
+    )
     .reduce((acc, o) => acc + orderTotal(o), 0);
 
   const visible = useMemo(() => {
