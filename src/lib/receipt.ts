@@ -140,16 +140,54 @@ export function buildReceiptHtml(ctx: ReceiptContext): string {
   ${isRecibo && !cupom ? `<div class="sign">${escapeHtml(profile.merchant_name || profile.store_name)}</div>` : ""}
 
   <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
-  <script>window.onload = function () { window.focus(); window.print(); };</script>
+  <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
 </body>
 </html>`;
 }
 
+/**
+ * Imprime usando um iframe oculto (funciona mesmo quando o app roda dentro de
+ * um iframe/pré-visualização, onde window.open costuma ser bloqueado).
+ */
 export function printReceipt(ctx: ReceiptContext): boolean {
-  const win = window.open("", "_blank", "width=820,height=900");
-  if (!win) return false;
-  win.document.open();
-  win.document.write(buildReceiptHtml(ctx));
-  win.document.close();
-  return true;
+  try {
+    const html = buildReceiptHtml(ctx);
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.style.visibility = "hidden";
+    document.body.appendChild(frame);
+
+    const doc = frame.contentDocument;
+    if (!doc) {
+      frame.remove();
+      return false;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const run = () => {
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+      } catch {
+        /* ignora */
+      }
+      window.setTimeout(() => frame.remove(), 60000);
+    };
+
+    if (doc.readyState === "complete") window.setTimeout(run, 250);
+    else frame.onload = () => window.setTimeout(run, 250);
+
+    return true;
+  } catch {
+    return false;
+  }
 }
+
