@@ -155,11 +155,7 @@
 }
 
 @utility text-gradient-brand {
-  background-image: linear-gradient(
-    100deg,
-    var(--color-primary),
-    var(--color-accent)
-  );
+  background-image: linear-gradient(100deg, var(--color-primary), var(--color-accent));
   background-clip: text;
   color: transparent;
 }

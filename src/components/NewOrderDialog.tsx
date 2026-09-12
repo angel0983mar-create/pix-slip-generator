@@ -217,7 +217,9 @@ export function NewOrderDialog({ profile }: { profile: Profile }) {
                   placeholder="Descrição"
                   value={item.name}
                   onChange={(e) =>
-                    setItems(items.map((it, i) => (i === index ? { ...it, name: e.target.value } : it)))
+                    setItems(
+                      items.map((it, i) => (i === index ? { ...it, name: e.target.value } : it)),
+                    )
                   }
                 />
                 <Input

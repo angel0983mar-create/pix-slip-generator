@@ -91,7 +91,8 @@ function Landing() {
           Plano grátis · sem cartão
         </p>
         <h1 className="mt-5 max-w-3xl text-4xl leading-[1.05] font-semibold md:text-6xl">
-          Cobre no Pix e entregue o <span className="text-gradient-brand">comprovante</span> na hora.
+          Cobre no Pix e entregue o <span className="text-gradient-brand">comprovante</span> na
+          hora.
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
           Crie o pedido, mostre o QR Code, confirme o pagamento e imprima o recibo em PDF, imagem ou

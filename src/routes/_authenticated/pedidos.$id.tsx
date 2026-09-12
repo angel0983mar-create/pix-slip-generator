@@ -26,7 +26,13 @@ import {
 import { usePixQr } from "@/components/PixQr";
 import { useOrder, useProfile } from "@/hooks/useStore";
 import { formatBRL, formatDate, formatDateTime, onlyDigits } from "@/lib/format";
-import { orderTotal, paymentLabel, STATUS_LABEL, type DocMode, type PrintLayout } from "@/lib/domain";
+import {
+  orderTotal,
+  paymentLabel,
+  STATUS_LABEL,
+  type DocMode,
+  type PrintLayout,
+} from "@/lib/domain";
 import { printReceipt } from "@/lib/receipt";
 import { buildReceiptImage, downloadDataUrl } from "@/lib/receipt-image";
 import { buildPixPayload } from "@/lib/pix";
@@ -61,7 +67,8 @@ function OrderDetail() {
   const qrDataUrl = usePixQr(order?.pix_payload ?? null);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (!order || !profile) return <p className="text-sm text-muted-foreground">Pedido não encontrado.</p>;
+  if (!order || !profile)
+    return <p className="text-sm text-muted-foreground">Pedido não encontrado.</p>;
 
   const total = orderTotal(order);
   const isPaid = order.status === "pago";
@@ -121,7 +128,13 @@ function OrderDetail() {
   }
 
   function handlePrint(docMode: DocMode) {
-    const ok = printReceipt({ order: order!, profile: profile!, mode: docMode, layout: activeLayout, qrDataUrl });
+    const ok = printReceipt({
+      order: order!,
+      profile: profile!,
+      mode: docMode,
+      layout: activeLayout,
+      qrDataUrl,
+    });
     if (!ok) {
       toast.error("Libere as janelas pop-up do navegador para imprimir ou salvar em PDF.");
     }
@@ -130,7 +143,12 @@ function OrderDetail() {
   async function handleImage(docMode: DocMode) {
     setBusy(true);
     try {
-      const dataUrl = await buildReceiptImage({ order: order!, profile: profile!, mode: docMode, qrDataUrl });
+      const dataUrl = await buildReceiptImage({
+        order: order!,
+        profile: profile!,
+        mode: docMode,
+        qrDataUrl,
+      });
       downloadDataUrl(
         dataUrl,
         `${docMode === "recibo" ? "recibo" : "cobranca"}-${String(order!.order_number).padStart(5, "0")}.png`,
@@ -159,11 +177,7 @@ function OrderDetail() {
 
     const phone = onlyDigits(order!.customer_contact ?? "");
     const target = phone.length >= 10 ? `55${phone.slice(-11)}` : "";
-    window.open(
-      `https://wa.me/${target}?text=${encodeURIComponent(lines)}`,
-      "_blank",
-      "noopener",
-    );
+    window.open(`https://wa.me/${target}?text=${encodeURIComponent(lines)}`, "_blank", "noopener");
   }
 
   async function remove() {
@@ -198,7 +212,10 @@ function OrderDetail() {
           </p>
         </div>
         <div className="text-right">
-          <Badge variant="outline" className={isPaid ? "border-success/40 bg-success/15 text-success" : ""}>
+          <Badge
+            variant="outline"
+            className={isPaid ? "border-success/40 bg-success/15 text-success" : ""}
+          >
             {STATUS_LABEL[order.status]}
           </Badge>
           <p className="mt-2 text-3xl font-semibold">{formatBRL(total)}</p>
@@ -241,7 +258,10 @@ function OrderDetail() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm text-muted-foreground">Layout de impressão</span>
-              <Select value={activeLayout} onValueChange={(value) => setLayout(value as PrintLayout)}>
+              <Select
+                value={activeLayout}
+                onValueChange={(value) => setLayout(value as PrintLayout)}
+              >
                 <SelectTrigger className="w-56">
                   <SelectValue />
                 </SelectTrigger>
