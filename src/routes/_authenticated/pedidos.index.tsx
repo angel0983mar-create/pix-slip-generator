@@ -9,7 +9,7 @@ import { useOrders, useProfile } from "@/hooks/useStore";
 import { formatBRL, formatDateTime } from "@/lib/format";
 import { orderTotal, STATUS_LABEL, type OrderStatus } from "@/lib/domain";
 
-export const Route = createFileRoute("/_authenticated/pedidos")({
+export const Route = createFileRoute("/_authenticated/pedidos/")({
   head: () => ({
     meta: [
       { title: "Pedidos | Comprovante Pix" },

@@ -140,18 +140,18 @@ export function buildReceiptHtml(ctx: ReceiptContext): string {
   ${isRecibo && !cupom ? `<div class="sign">${escapeHtml(profile.merchant_name || profile.store_name)}</div>` : ""}
 
   <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
-  <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
+
 </body>
 </html>`;
 }
 
 /**
- * Imprime usando um iframe oculto (funciona mesmo quando o app roda dentro de
- * um iframe/pré-visualização, onde window.open costuma ser bloqueado).
+ * Imprime um HTML usando um iframe oculto (funciona mesmo quando o app roda
+ * dentro de um iframe/pré-visualização, onde window.open costuma ser bloqueado).
  */
-export function printReceipt(ctx: ReceiptContext): boolean {
+export function printHtml(html: string): boolean {
   try {
-    const html = buildReceiptHtml(ctx);
+
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.position = "fixed";
@@ -190,4 +190,9 @@ export function printReceipt(ctx: ReceiptContext): boolean {
     return false;
   }
 }
+
+export function printReceipt(ctx: ReceiptContext): boolean {
+  return printHtml(buildReceiptHtml(ctx));
+}
+
 

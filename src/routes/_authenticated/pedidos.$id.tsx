@@ -34,7 +34,7 @@ import {
   type PrintLayout,
 } from "@/lib/domain";
 import { printReceipt } from "@/lib/receipt";
-import { buildReceiptImage, downloadDataUrl } from "@/lib/receipt-image";
+import { buildReceiptImage, downloadDataUrl, openImageInNewTab } from "@/lib/receipt-image";
 import { buildPixPayload } from "@/lib/pix";
 
 export const Route = createFileRoute("/_authenticated/pedidos/$id")({
@@ -140,7 +140,7 @@ function OrderDetail() {
     }
   }
 
-  async function handleImage(docMode: DocMode) {
+  async function handleImage(docMode: DocMode, openInTab = false) {
     setBusy(true);
     try {
       const dataUrl = await buildReceiptImage({
@@ -149,6 +149,15 @@ function OrderDetail() {
         mode: docMode,
         qrDataUrl,
       });
+      if (openInTab) {
+        const ok = openImageInNewTab(dataUrl);
+        if (!ok) {
+          toast.error("Libere as janelas pop-up do navegador para abrir a imagem.");
+          return;
+        }
+        toast.success("Imagem aberta em outra aba. Toque e segure para salvar.");
+        return;
+      }
       downloadDataUrl(
         dataUrl,
         `${docMode === "recibo" ? "recibo" : "cobranca"}-${String(order!.order_number).padStart(5, "0")}.png`,
@@ -160,6 +169,7 @@ function OrderDetail() {
       setBusy(false);
     }
   }
+
 
   function sendWhatsApp() {
     const lines = [
@@ -284,6 +294,16 @@ function OrderDetail() {
                 <Send className="size-4" /> Enviar no WhatsApp
               </Button>
             </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => handleImage(mode, true)}
+            >
+              Não baixou? Abrir imagem em outra aba
+            </Button>
+
 
             {isPaid ? (
               <Button variant="ghost" size="sm" onClick={() => handlePrint("cobranca")}>
