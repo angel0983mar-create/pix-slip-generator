@@ -140,7 +140,7 @@ export function buildReceiptHtml(ctx: ReceiptContext): string {
   ${isRecibo && !cupom ? `<div class="sign">${escapeHtml(profile.merchant_name || profile.store_name)}</div>` : ""}
 
   <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
-  <div class="foot">${escapeHtml(profile.receipt_footer || "Obrigado pela preferência!")}</div>
+
 </body>
 </html>`;
 }
