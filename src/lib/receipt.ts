@@ -146,12 +146,12 @@ export function buildReceiptHtml(ctx: ReceiptContext): string {
 }
 
 /**
- * Imprime usando um iframe oculto (funciona mesmo quando o app roda dentro de
- * um iframe/pré-visualização, onde window.open costuma ser bloqueado).
+ * Imprime um HTML usando um iframe oculto (funciona mesmo quando o app roda
+ * dentro de um iframe/pré-visualização, onde window.open costuma ser bloqueado).
  */
-export function printReceipt(ctx: ReceiptContext): boolean {
+export function printHtml(html: string): boolean {
   try {
-    const html = buildReceiptHtml(ctx);
+
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.position = "fixed";
