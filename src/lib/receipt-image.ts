@@ -154,8 +154,44 @@ export async function buildReceiptImage(params: {
 }
 
 export function downloadDataUrl(dataUrl: string, filename: string) {
+  // Converte para blob: downloads de data: URL longas são bloqueados em iframes.
+  let href = dataUrl;
+  let revoke: (() => void) | undefined;
+  try {
+    const [meta, base64] = dataUrl.split(",");
+    const mime = meta.match(/:(.*?);/)?.[1] ?? "image/png";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    href = url;
+    revoke = () => URL.revokeObjectURL(url);
+  } catch {
+    /* usa a data URL original */
+  }
+
   const link = document.createElement("a");
-  link.href = dataUrl;
+  link.href = href;
   link.download = filename;
+  link.rel = "noopener";
+  link.target = "_self";
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
+  window.setTimeout(() => {
+    link.remove();
+    revoke?.();
+  }, 60000);
 }
+
+/** Abre a imagem gerada em uma nova aba (alternativa quando o download é bloqueado). */
+export function openImageInNewTab(dataUrl: string): boolean {
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(
+    `<title>Comprovante</title><body style="margin:0;background:#111;display:grid;place-items:center"><img src="${dataUrl}" style="max-width:100%;height:auto" /></body>`,
+  );
+  win.document.close();
+  return true;
+}
+
