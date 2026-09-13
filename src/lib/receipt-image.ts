@@ -158,9 +158,11 @@ export function downloadDataUrl(dataUrl: string, filename: string) {
   let href = dataUrl;
   let revoke: (() => void) | undefined;
   try {
-    const [meta, base64] = dataUrl.split(",");
+    const meta = dataUrl.slice(0, dataUrl.indexOf(","));
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
     const mime = meta.match(/:(.*?);/)?.[1] ?? "image/png";
     const binary = atob(base64);
+
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
     const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
