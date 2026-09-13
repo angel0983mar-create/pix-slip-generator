@@ -7,6 +7,9 @@ import { Label } from "@/components/ui/label";
 import { useOrders, useProfile } from "@/hooks/useStore";
 import { formatBRL, formatDateTime } from "@/lib/format";
 import { orderTotal, PAYMENT_METHODS, paymentLabel } from "@/lib/domain";
+import { printHtml } from "@/lib/receipt";
+import { toast } from "sonner";
+
 
 export const Route = createFileRoute("/_authenticated/caixa")({
   head: () => ({
