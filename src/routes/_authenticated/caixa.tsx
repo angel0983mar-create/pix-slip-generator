@@ -59,7 +59,7 @@ function CashPage() {
           )}</td><td style="text-align:right">${formatBRL(orderTotal(o))}</td></tr>`,
       )
       .join("");
-    win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8" />
+    const ok = printHtml(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8" />
       <title>Fechamento de caixa</title>
       <style>@page{size:${profile?.print_layout === "cupom" ? "80mm auto" : "A4"};margin:${
         profile?.print_layout === "cupom" ? "3mm" : "16mm"
@@ -76,9 +76,10 @@ function CashPage() {
       <tbody>${rows || '<tr><td colspan="4">Nenhum recebimento neste dia.</td></tr>'}</tbody></table>
       <div class="tot">Total recebido: ${formatBRL(total)}</div>
       <div style="margin-top:8px">Em aberto no momento: ${formatBRL(openTotal)} (${open.length} pedidos)</div>
-      <script>window.onload=function(){window.print()}</script></body></html>`);
-    win.document.close();
+      </body></html>`);
+    if (!ok) toast.error("Não foi possível abrir a impressão neste navegador.");
   }
+
 
   return (
     <div className="space-y-8">
