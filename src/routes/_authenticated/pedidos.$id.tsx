@@ -295,6 +295,16 @@ function OrderDetail() {
               </Button>
             </div>
 
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => handleImage(mode, true)}
+            >
+              Não baixou? Abrir imagem em outra aba
+            </Button>
+
+
             {isPaid ? (
               <Button variant="ghost" size="sm" onClick={() => handlePrint("cobranca")}>
                 Imprimir também a cobrança original
