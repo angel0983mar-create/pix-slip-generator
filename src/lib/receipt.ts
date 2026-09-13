@@ -191,3 +191,8 @@ export function printHtml(html: string): boolean {
   }
 }
 
+export function printReceipt(ctx: ReceiptContext): boolean {
+  return printHtml(buildReceiptHtml(ctx));
+}
+
+
