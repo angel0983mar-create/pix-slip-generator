@@ -140,7 +140,7 @@ function OrderDetail() {
     }
   }
 
-  async function handleImage(docMode: DocMode) {
+  async function handleImage(docMode: DocMode, openInTab = false) {
     setBusy(true);
     try {
       const dataUrl = await buildReceiptImage({
@@ -149,6 +149,15 @@ function OrderDetail() {
         mode: docMode,
         qrDataUrl,
       });
+      if (openInTab) {
+        const ok = openImageInNewTab(dataUrl);
+        if (!ok) {
+          toast.error("Libere as janelas pop-up do navegador para abrir a imagem.");
+          return;
+        }
+        toast.success("Imagem aberta em outra aba. Toque e segure para salvar.");
+        return;
+      }
       downloadDataUrl(
         dataUrl,
         `${docMode === "recibo" ? "recibo" : "cobranca"}-${String(order!.order_number).padStart(5, "0")}.png`,
@@ -160,6 +169,7 @@ function OrderDetail() {
       setBusy(false);
     }
   }
+
 
   function sendWhatsApp() {
     const lines = [
