@@ -34,7 +34,7 @@ import {
   type PrintLayout,
 } from "@/lib/domain";
 import { printReceipt } from "@/lib/receipt";
-import { buildReceiptImage, downloadDataUrl } from "@/lib/receipt-image";
+import { buildReceiptImage, downloadDataUrl, openImageInNewTab } from "@/lib/receipt-image";
 import { buildPixPayload } from "@/lib/pix";
 
 export const Route = createFileRoute("/_authenticated/pedidos/$id")({
