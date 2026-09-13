@@ -50,8 +50,7 @@ function CashPage() {
   })).filter((row) => row.value > 0);
 
   function printSummary() {
-    const win = window.open("", "_blank", "width=700,height=800");
-    if (!win) return;
+
     const rows = paidToday
       .map(
         (o) =>
