@@ -88,7 +88,7 @@ function ProductsPage() {
     }
     try {
       await save.mutateAsync({
-        id: form.id || undefined,
+        ...(form.id ? { id: form.id } : {}),
         name: form.name.trim(),
         barcode: form.barcode.trim() || null,
         price: parseAmount(form.price),

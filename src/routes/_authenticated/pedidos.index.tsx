@@ -81,7 +81,7 @@ function OrdersPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="panel p-5">
           <p className="text-sm text-muted-foreground">Em aberto</p>
-          <p className="mt-1 text-2xl font-semibold">{formatBRL(openAmount)}</p>
+          <p className="mt-1 text-2xl font-semibold text-warning">{formatBRL(openAmount)}</p>
         </div>
         <div className="panel p-5">
           <p className="text-sm text-muted-foreground">Recebido hoje</p>

@@ -1,14 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, Receipt, Settings, Wallet } from "lucide-react";
+import { Barcode, LogOut, Package, Receipt, Settings, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/hooks/useStore";
 
 const NAV = [
+  { to: "/pdv", label: "PDV", icon: Barcode },
   { to: "/pedidos", label: "Pedidos", icon: Receipt },
   { to: "/caixa", label: "Caixa", icon: Wallet },
+  { to: "/produtos", label: "Produtos", icon: Package },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
