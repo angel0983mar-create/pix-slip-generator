@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as PdvRouteImport } from './routes/pdv'
+import { Route as ProdutosRouteImport } from './routes/produtos'
 import { Route as AuthenticatedCaixaRouteImport } from './routes/_authenticated/caixa'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedPedidosIndexRouteImport } from './routes/_authenticated/pedidos.index'
@@ -29,6 +31,16 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PdvRoute = PdvRouteImport.update({
+  id: '/pdv',
+  path: '/pdv',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProdutosRoute = ProdutosRouteImport.update({
+  id: '/produtos',
+  path: '/produtos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedCaixaRoute = AuthenticatedCaixaRouteImport.update({
@@ -57,6 +69,8 @@ const AuthenticatedPedidosIdRoute = AuthenticatedPedidosIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/pdv': typeof PdvRoute
+  '/produtos': typeof ProdutosRoute
   '/caixa': typeof AuthenticatedCaixaRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/pedidos/$id': typeof AuthenticatedPedidosIdRoute
@@ -65,6 +79,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/pdv': typeof PdvRoute
+  '/produtos': typeof ProdutosRoute
   '/caixa': typeof AuthenticatedCaixaRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/pedidos/$id': typeof AuthenticatedPedidosIdRoute
@@ -75,6 +91,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/pdv': typeof PdvRoute
+  '/produtos': typeof ProdutosRoute
   '/_authenticated/caixa': typeof AuthenticatedCaixaRoute
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/pedidos/$id': typeof AuthenticatedPedidosIdRoute
@@ -83,14 +101,31 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/caixa' | '/configuracoes' | '/pedidos/$id' | '/pedidos/'
+    | '/'
+    | '/auth'
+    | '/pdv'
+    | '/produtos'
+    | '/caixa'
+    | '/configuracoes'
+    | '/pedidos/$id'
+    | '/pedidos/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/caixa' | '/configuracoes' | '/pedidos/$id' | '/pedidos'
+  to:
+    | '/'
+    | '/auth'
+    | '/pdv'
+    | '/produtos'
+    | '/caixa'
+    | '/configuracoes'
+    | '/pedidos/$id'
+    | '/pedidos'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/pdv'
+    | '/produtos'
     | '/_authenticated/caixa'
     | '/_authenticated/configuracoes'
     | '/_authenticated/pedidos/$id'
@@ -101,6 +136,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  PdvRoute: typeof PdvRoute
+  ProdutosRoute: typeof ProdutosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -124,6 +161,20 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pdv': {
+      id: '/pdv'
+      path: '/pdv'
+      fullPath: '/pdv'
+      preLoaderRoute: typeof PdvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/produtos': {
+      id: '/produtos'
+      path: '/produtos'
+      fullPath: '/produtos'
+      preLoaderRoute: typeof ProdutosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/caixa': {
@@ -178,6 +229,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  PdvRoute: PdvRoute,
+  ProdutosRoute: ProdutosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
