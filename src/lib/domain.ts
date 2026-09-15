@@ -27,6 +27,24 @@ export interface Order {
   updated_at: string;
 }
 
+export interface Product {
+  id: string;
+  name: string;
+  barcode: string | null;
+  price: number;
+  unit: string;
+  category: string | null;
+  active: boolean;
+}
+
+export const PRODUCT_UNITS = [
+  { value: "un", label: "Unidade" },
+  { value: "kg", label: "Quilo" },
+  { value: "l", label: "Litro" },
+  { value: "cx", label: "Caixa" },
+  { value: "pct", label: "Pacote" },
+] as const;
+
 export interface Profile {
   id: string;
   store_name: string;
