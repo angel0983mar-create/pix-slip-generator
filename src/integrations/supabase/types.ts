@@ -71,6 +71,45 @@ export type Database = {
         }
         Relationships: []
       }
+      products: {
+        Row: {
+          active: boolean
+          barcode: string | null
+          category: string | null
+          created_at: string
+          id: string
+          name: string
+          price: number
+          unit: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          barcode?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          price?: number
+          unit?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          barcode?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          price?: number
+          unit?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           city: string
