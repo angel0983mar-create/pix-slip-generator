@@ -92,7 +92,7 @@ export const Route = createFileRoute("/pdv")({
 
 interface CartLine extends OrderItem {
   key: string;
-  note?: string;
+  note?: string | undefined;
 }
 
 
