@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Barcode,
@@ -18,12 +18,11 @@ import {
   Percent,
   ChefHat,
   Wrench,
-  ChevronDown,
-  Sparkles,
   Store,
   Tag,
-  Check,
   Loader2,
+  Keyboard,
+  PlusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -67,6 +66,14 @@ import {
   type BusinessBranch,
 } from "@/lib/business-branches";
 import { BranchWishlistModal } from "@/components/BranchWishlistModal";
+import { QuickItemModal } from "@/components/QuickItemModal";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import { LogoUploader } from "@/components/LogoUploader";
+import {
+  loadShortcutsConfig,
+  matchesKey,
+  type ShortcutActionId,
+} from "@/lib/keyboard-shortcuts";
 
 export const Route = createFileRoute("/pdv")({
   ssr: false,
@@ -128,11 +135,18 @@ function PdvPage() {
     (settings.business_branch as BusinessBranch) || "mercado",
   );
 
-  // Modal de desejos / sugestões dos clientes
+  // Atalhos de teclado
+  const [shortcutsConfig, setShortcutsConfig] = useState<Record<ShortcutActionId, string>>(() =>
+    loadShortcutsConfig(),
+  );
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+
+  // Modais
   const [wishlistOpen, setWishlistOpen] = useState(false);
+  const [quickItemOpen, setQuickItemOpen] = useState(false);
+  const [scaleModalOpen, setScaleModalOpen] = useState(false);
 
   // Modal de Pesagem (Mercado)
-  const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [scaleItemName, setScaleItemName] = useState("");
   const [scalePriceKg, setScalePriceKg] = useState("");
   const [scaleGrams, setScaleGrams] = useState("");
@@ -141,7 +155,6 @@ function PdvPage() {
   const [tableNumber, setTableNumber] = useState(""); // Restaurante
   const [technicianName, setTechnicianName] = useState(""); // Serviços
   const [discountPercent, setDiscountPercent] = useState<number>(0); // Moda / Varejo
-  const [itemNote, setItemNote] = useState("");
 
   // Filtro de categoria selecionada
   const [selectedCategory, setSelectedCategory] = useState<string>("todas");
@@ -151,8 +164,6 @@ function PdvPage() {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState("");
   const [method, setMethod] = useState("pix");
-  const [freeName, setFreeName] = useState("");
-  const [freePrice, setFreePrice] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Order | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -175,6 +186,63 @@ function PdvPage() {
       icon: BUSINESS_BRANCHES[next].icon,
     });
   }
+
+  // Listener Global de Atalhos de Teclado
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      // Se estiver digitando em input/textarea, não interceptar a menos que seja tecla de função (F1..F12)
+      const target = event.target as HTMLElement | null;
+      const isInputFocused =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      const isFKey = event.key.startsWith("F") && !isNaN(Number(event.key.slice(1)));
+
+      if (matchesKey(event, shortcutsConfig.focus_barcode)) {
+        event.preventDefault();
+        codeRef.current?.focus();
+        codeRef.current?.select();
+        return;
+      }
+
+      if (matchesKey(event, shortcutsConfig.open_free_item)) {
+        event.preventDefault();
+        setQuickItemOpen(true);
+        return;
+      }
+
+      if (matchesKey(event, shortcutsConfig.open_weigh)) {
+        event.preventDefault();
+        setScaleModalOpen(true);
+        return;
+      }
+
+      if (matchesKey(event, shortcutsConfig.checkout)) {
+        event.preventDefault();
+        checkout();
+        return;
+      }
+
+      if (matchesKey(event, shortcutsConfig.clear_cart)) {
+        if (!isInputFocused || isFKey) {
+          event.preventDefault();
+          if (lines.length) {
+            setLines([]);
+            toast.info("Carrinho esvaziado.");
+          }
+          return;
+        }
+      }
+
+      if (matchesKey(event, shortcutsConfig.open_shortcuts)) {
+        event.preventDefault();
+        setShortcutsModalOpen(true);
+        return;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [shortcutsConfig, lines, total, busy, profile, method, customer, currentBranch, tableNumber, technicianName, discountPercent]);
 
   // Obter lista única de categorias presentes nos produtos cadastrados
   const allCategories = useMemo(() => {
@@ -240,18 +308,6 @@ function PdvPage() {
         .map((l) => (l.key === key ? { ...l, qty: l.qty + delta } : l))
         .filter((l) => l.qty > 0),
     );
-  }
-
-  function addFreeItem() {
-    const price = parseAmount(freePrice);
-    if (price <= 0) {
-      toast.error("Informe o valor do item.");
-      return;
-    }
-    addLine(freeName.trim() || "Item avulso", price, itemNote.trim() || undefined);
-    setFreeName("");
-    setFreePrice("");
-    setItemNote("");
   }
 
   function handleAddWeighedItem(e: React.FormEvent) {
@@ -394,34 +450,32 @@ function PdvPage() {
 
   return (
     <div className="min-h-screen bg-background pb-20 lg:pb-6">
-      {/* Header Principal */}
+      {/* Header Principal — Sem link de redirecionamento na Logo para garantir o sistema */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          {/* Logo e Nome da Loja */}
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2.5">
-              {profile?.store_logo_url ? (
-                <img
-                  src={profile.store_logo_url}
-                  alt={profile.store_name}
-                  className="size-9 rounded-xl border border-border object-cover"
-                />
-              ) : (
-                <span className="grid size-9 place-items-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground shadow-sm">
-                  {profile?.store_name?.slice(0, 1).toUpperCase() || "C"}
-                </span>
-              )}
-              <div className="flex flex-col">
-                <span className="font-display text-base font-semibold leading-tight sm:text-lg">
-                  {profile?.store_name ?? "PDV Rápido"}
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {branchConfig.label}
-                </span>
-              </div>
-            </Link>
+          {/* Logo e Nome da Loja — Não navega para início do site */}
+          <div className="flex items-center gap-3 select-none cursor-default">
+            {profile?.store_logo_url ? (
+              <img
+                src={profile.store_logo_url}
+                alt={profile.store_name}
+                className="size-9 rounded-xl border border-border object-cover bg-background"
+              />
+            ) : (
+              <span className="grid size-9 place-items-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground shadow-sm">
+                {profile?.store_name?.slice(0, 1).toUpperCase() || "C"}
+              </span>
+            )}
+            <div className="flex flex-col">
+              <span className="font-display text-base font-semibold leading-tight sm:text-lg">
+                {profile?.store_name ?? "PDV Rápido"}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Caixa aberto · {branchConfig.label}
+              </span>
+            </div>
 
-            {/* Seletor de Ramo do Negócio */}
+            {/* Seletor de Ramo do Negócio direto na tela */}
             <Select
               value={currentBranch}
               onValueChange={(val) => handleBranchChange(val as BusinessBranch)}
@@ -432,7 +486,7 @@ function PdvPage() {
               </SelectTrigger>
               <SelectContent align="start" className="w-56">
                 <div className="p-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Selecione o Ramo da Loja
+                  Trocar Nicho do PDV
                 </div>
                 {Object.values(BUSINESS_BRANCHES).map((branch) => (
                   <SelectItem key={branch.id} value={branch.id} className="text-xs">
@@ -453,32 +507,32 @@ function PdvPage() {
               variant="outline"
               size="sm"
               onClick={() => setWishlistOpen(true)}
-              className="gap-1.5 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 text-xs"
+              className="gap-1.5 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 text-xs h-8"
             >
               <Lightbulb className="size-3.5" />
               <span className="hidden sm:inline">Desejar layout/função</span>
               <span className="sm:hidden">Desejar</span>
             </Button>
 
-            <Button variant="ghost" size="sm" asChild className="hidden sm:flex">
+            <Button variant="ghost" size="sm" asChild className="hidden sm:flex h-8 text-xs">
               <Link to="/produtos">
-                <Package className="size-4" /> Produtos
+                <Package className="size-3.5" /> Produtos
               </Link>
             </Button>
 
             {isGuest ? (
-              <Button size="sm" onClick={signInWithGoogle} className="text-xs">
+              <Button size="sm" onClick={signInWithGoogle} className="text-xs h-8">
                 <UserPlus className="size-3.5" /> Salvar no Google
               </Button>
             ) : (
-              <Button variant="secondary" size="sm" asChild className="text-xs">
+              <Button variant="secondary" size="sm" asChild className="text-xs h-8">
                 <Link to="/pedidos">Meus pedidos</Link>
               </Button>
             )}
           </div>
         </div>
 
-        {/* Banner do Ramo selecionado com Tagline */}
+        {/* Banner do Ramo com Tagline */}
         <div className="border-t border-border/60 bg-secondary/30 px-4 py-1.5">
           <div className="mx-auto flex max-w-7xl items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -488,15 +542,25 @@ function PdvPage() {
               <span className="hidden md:inline">{branchConfig.tagline}</span>
             </div>
 
-            {isGuest ? (
-              <span className="text-[11px]">
-                Modo visitante (salva neste aparelho)
-              </span>
-            ) : (
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px]">
-                ● Caixa conectado
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShortcutsModalOpen(true)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Keyboard className="size-3 text-primary" />
+                <span className="hidden sm:inline">Atalhos:</span>
+                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
+                  {shortcutsConfig.focus_barcode} Bipar
+                </kbd>
+                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
+                  {shortcutsConfig.open_free_item} Avulso
+                </kbd>
+                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
+                  {shortcutsConfig.checkout} Finalizar
+                </kbd>
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -504,55 +568,77 @@ function PdvPage() {
       {/* Conteúdo Principal */}
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-5 lg:grid-cols-[1fr_400px]">
         <section className="space-y-4">
-          {/* Barra de Código de Barras + Pesagem (se mercado) */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <form onSubmit={submitCode} className="panel flex flex-1 items-center gap-2 p-3">
+          {/* Barra de Código de Barras + Botão de Item Avulso + Pesagem */}
+          <div className="flex flex-wrap items-center gap-2">
+            <form onSubmit={submitCode} className="panel flex flex-1 items-center gap-2 p-2.5 min-w-[260px]">
               <Barcode className="size-5 shrink-0 text-primary" />
               <Input
                 ref={codeRef}
                 autoFocus
-                className="h-10 flex-1 text-base"
+                className="h-10 flex-1 text-base border-0 focus-visible:ring-0 bg-transparent px-2"
                 inputMode="numeric"
                 placeholder={
                   currentBranch === "mercado"
-                    ? "Passe o leitor de código de barras ou digite o número"
-                    : "Passe o código de barras do item"
+                    ? `Passe o leitor ou digite o código (${shortcutsConfig.focus_barcode})`
+                    : `Código de barras (${shortcutsConfig.focus_barcode})`
                 }
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
-              <Button type="submit" size="sm" className="h-10 px-4">
+              <Button type="submit" size="sm" className="h-9 px-3.5">
                 Bipar
               </Button>
             </form>
+
+            {/* Botão de Incluir Item Avulso sem cadastro (limpo, com atalho) */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setQuickItemOpen(true)}
+              className="h-[52px] gap-1.5 border-border bg-secondary/40 hover:bg-secondary text-xs px-3.5"
+            >
+              <PlusCircle className="size-4 text-primary" />
+              <div className="flex flex-col items-start leading-none">
+                <span className="font-semibold text-foreground">Item Avulso</span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {shortcutsConfig.open_free_item}
+                </span>
+              </div>
+            </Button>
 
             {/* Recurso Rápido do Ramo Mercado: Balança / Pesagem */}
             {currentBranch === "mercado" ? (
               <Button
                 type="button"
                 variant="outline"
-                size="lg"
+                size="sm"
                 onClick={() => setScaleModalOpen(true)}
-                className="h-auto gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 py-3"
+                className="h-[52px] gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-xs px-3.5"
               >
-                <Scale className="size-5" />
-                <span className="text-xs font-semibold">Pesar por Kg</span>
+                <Scale className="size-4" />
+                <div className="flex flex-col items-start leading-none">
+                  <span className="font-semibold">Pesar por Kg</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    {shortcutsConfig.open_weigh}
+                  </span>
+                </div>
               </Button>
             ) : null}
           </div>
 
-          {/* Barra de Busca por Texto */}
+          {/* Barra de Busca por Nome */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-9"
-              placeholder={`Buscar em ${branchConfig.label.toLowerCase()}...`}
+              className="pl-9 h-10"
+              placeholder={`Buscar produto pelo nome ou código...`}
               value={term}
               onChange={(e) => setTerm(e.target.value)}
             />
           </div>
 
-          {/* Chips de Categorias Dinâmicas (Mercado, Restaurante, Moda, Serviços) */}
+          {/* Chips de Categorias Dinâmicas */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             <button
               type="button"
@@ -583,7 +669,7 @@ function PdvPage() {
               </button>
             ))}
 
-            {/* Categorias personalizadas do usuário */}
+            {/* Categorias adicionais cadastradas nos produtos */}
             {allCategories.map((cat) => {
               const alreadyInQuick = branchConfig.quickCategories.some(
                 (q) => q.label.toLowerCase() === cat.toLowerCase(),
@@ -607,14 +693,11 @@ function PdvPage() {
             })}
           </div>
 
-          {/* Grade de Produtos com Loading Skeleton */}
+          {/* Grade de Produtos com Shimmer Loading */}
           {productsLoading ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: 8 }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className="panel flex h-36 flex-col justify-between p-4"
-                >
+                <div key={idx} className="panel flex h-36 flex-col justify-between p-4">
                   <div className="space-y-2">
                     <div className="skeleton h-4 w-3/4" />
                     <div className="skeleton h-3 w-1/2" />
@@ -647,7 +730,7 @@ function PdvPage() {
                     <div>
                       <div className="flex items-start justify-between gap-1">
                         <span className="text-base">{getCategoryEmoji(product.category)}</span>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground font-medium">
                           {product.unit ? product.unit.toUpperCase() : "UN"}
                         </span>
                       </div>
@@ -675,18 +758,23 @@ function PdvPage() {
               <Store className="mx-auto size-8 text-muted-foreground/50" />
               <p className="mt-2 font-medium">Nenhum produto cadastrado nesta categoria.</p>
               <p className="text-xs text-muted-foreground">
-                Cadastre itens com leitor de código de barras ou use a inclusão avulsa abaixo.
+                Cadastre itens com leitor de código de barras ou use o botão "+ Item Avulso ({shortcutsConfig.open_free_item})".
               </p>
-              <Button size="sm" variant="outline" asChild className="mt-3 text-xs">
-                <Link to="/produtos">Cadastrar Produtos</Link>
-              </Button>
+              <div className="mt-3 flex justify-center gap-2">
+                <Button size="sm" variant="outline" asChild className="text-xs">
+                  <Link to="/produtos">Cadastrar Produtos</Link>
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setQuickItemOpen(true)} className="text-xs">
+                  <Plus className="size-3.5 mr-1" /> Lançar Avulso
+                </Button>
+              </div>
             </div>
           )}
 
           {/* Recursos Específicos por Ramo: Mesa (Restaurante), Técnico (Serviços), Desconto (Moda) */}
           <div className="grid gap-3 sm:grid-cols-2">
             {currentBranch === "restaurante" ? (
-              <div className="panel space-y-2 p-3.5 border-amber-500/30 bg-amber-500/5">
+              <div className="panel space-y-2 p-3.5 border-amber-500/30 bg-amber-500/5 sm:col-span-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
                   <ChefHat className="size-4" />
                   <span>Restaurante: Identificação do Pedido</span>
@@ -701,7 +789,7 @@ function PdvPage() {
             ) : null}
 
             {currentBranch === "servicos" ? (
-              <div className="panel space-y-2 p-3.5 border-blue-500/30 bg-blue-500/5">
+              <div className="panel space-y-2 p-3.5 border-blue-500/30 bg-blue-500/5 sm:col-span-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-blue-300">
                   <Wrench className="size-4" />
                   <span>Serviços: Atendente / Técnico</span>
@@ -744,44 +832,7 @@ function PdvPage() {
             ) : null}
           </div>
 
-          {/* Item avulso colapsável (limpeza visual) */}
-          <details className="panel group p-4">
-            <summary className="flex cursor-pointer select-none items-center justify-between text-sm font-medium">
-              <span className="flex items-center gap-2">
-                <Plus className="size-4 text-primary" />
-                Incluir item avulso ou sem cadastro
-              </span>
-              <ChevronDown className="size-4 transition-transform group-open:rotate-180 text-muted-foreground" />
-            </summary>
-            <div className="mt-3 space-y-3 pt-2 border-t border-border">
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  className="min-w-40 flex-1"
-                  placeholder="Descrição do item ou serviço"
-                  value={freeName}
-                  onChange={(e) => setFreeName(e.target.value)}
-                />
-                <Input
-                  className="w-28"
-                  inputMode="decimal"
-                  placeholder="Valor (R$)"
-                  value={freePrice}
-                  onChange={(e) => setFreePrice(e.target.value)}
-                />
-                <Button type="button" variant="secondary" onClick={addFreeItem}>
-                  <Plus className="size-4" /> Adicionar
-                </Button>
-              </div>
-              <Input
-                placeholder="Observação do item (opcional, ex: sem cebola / com defeito)"
-                value={itemNote}
-                onChange={(e) => setItemNote(e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </details>
-
-          {/* Configuração da loja (Visitante) com Logo e Ramo */}
+          {/* Configuração da loja (Visitante) com Upload de Logo e Ramo */}
           {isGuest ? (
             <PixSetupPanel
               settings={settings}
@@ -809,7 +860,7 @@ function PdvPage() {
               {lines.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
                   <p>Carrinho vazio.</p>
-                  <p className="text-xs">Bipe um código ou toque nos produtos para adicionar.</p>
+                  <p className="text-xs">Bipe um código ({shortcutsConfig.focus_barcode}) ou lance item avulso ({shortcutsConfig.open_free_item}).</p>
                 </div>
               ) : (
                 lines.map((line) => (
@@ -895,13 +946,18 @@ function PdvPage() {
                     Gerando cobrança...
                   </>
                 ) : (
-                  "Finalizar e gerar cobrança"
+                  <>Finalizar venda ({shortcutsConfig.checkout})</>
                 )}
               </Button>
 
               {lines.length ? (
-                <Button className="w-full" variant="ghost" size="sm" onClick={() => setLines([])}>
-                  Limpar carrinho
+                <Button
+                  className="w-full text-xs text-muted-foreground"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLines([])}
+                >
+                  Limpar carrinho ({shortcutsConfig.clear_cart})
                 </Button>
               ) : null}
             </div>
@@ -934,6 +990,24 @@ function PdvPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Ícone Flutuante Discreto no Canto Inferior Direito para Consultar Atalhos */}
+      <button
+        type="button"
+        onClick={() => setShortcutsModalOpen(true)}
+        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 rounded-full border border-border/80 bg-secondary/85 px-3 py-1.5 text-xs text-muted-foreground shadow-panel backdrop-blur transition-all hover:bg-secondary hover:text-foreground hover:scale-105"
+        title="Ver atalhos de teclado do PDV"
+      >
+        <Keyboard className="size-3.5 text-primary" />
+        <span className="font-medium text-[11px]">Atalhos ({shortcutsConfig.open_shortcuts})</span>
+      </button>
+
+      {/* Modal de Item Avulso (Substituiu a caixa de inserção rápida) */}
+      <QuickItemModal
+        open={quickItemOpen}
+        onOpenChange={setQuickItemOpen}
+        onAddItem={(name, price, note) => addLine(name, price, note)}
+      />
 
       {/* Modal de Pesagem (Mercado) */}
       <Dialog open={scaleModalOpen} onOpenChange={setScaleModalOpen}>
@@ -1006,6 +1080,13 @@ function PdvPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de Atalhos de Teclado */}
+      <KeyboardShortcutsModal
+        open={shortcutsModalOpen}
+        onOpenChange={setShortcutsModalOpen}
+        onConfigChange={() => setShortcutsConfig(loadShortcutsConfig())}
+      />
+
       {/* Central de Desejos de Layout & Funções por Ramo */}
       <BranchWishlistModal
         open={wishlistOpen}
@@ -1032,7 +1113,7 @@ function PixSetupPanel({
         <Badge variant="outline" className="text-[11px]">Personalização</Badge>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Nome da loja</Label>
           <Input
@@ -1062,16 +1143,13 @@ function PixSetupPanel({
           </Select>
         </div>
 
-        <div className="space-y-1 sm:col-span-2">
-          <Label>URL do Logo da Loja (opcional)</Label>
-          <Input
-            placeholder="https://exemplo.com/logo.png"
-            value={form.store_logo_url ?? ""}
-            onChange={(e) => setForm({ ...form, store_logo_url: e.target.value || null })}
+        {/* Upload de Logo via arquivo */}
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>Logo da Loja (enviar arquivo de imagem)</Label>
+          <LogoUploader
+            value={form.store_logo_url}
+            onChange={(logoUrl) => setForm({ ...form, store_logo_url: logoUrl })}
           />
-          <p className="text-[11px] text-muted-foreground">
-            Cole o link direto da imagem da sua marca para exibir no topo do PDV e nos comprovantes.
-          </p>
         </div>
 
         <div className="space-y-1">
@@ -1088,7 +1166,7 @@ function PixSetupPanel({
           />
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 sm:col-span-2">
           <Label>Tipo da chave</Label>
           <Select
             value={form.pix_key_type}
