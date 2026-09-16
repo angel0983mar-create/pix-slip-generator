@@ -9,7 +9,7 @@ import {
   Package,
   Plus,
   Printer,
-  Search,
+  Settings,
   ShoppingCart,
   Trash2,
   UserPlus,
