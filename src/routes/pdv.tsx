@@ -541,147 +541,43 @@ function PdvPage() {
             ) : null}
           </div>
 
-          {/* Barra de Busca por Texto */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder={`Buscar em ${branchConfig.label.toLowerCase()}...`}
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
+          {/* Aviso: PDV é somente de inserção — sem seleção de produtos */}
+          <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="flex items-start gap-2.5">
+              <Tag className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="text-sm">
+                <p className="font-medium">Caixa de inserção rápida</p>
+                <p className="text-xs text-muted-foreground">
+                  Bipe o código de barras ou digite o nome do produto e pressione Enter. Nada de
+                  procurar item na tela: o caixa não sai do teclado.
+                  {productsLoading
+                    ? " Carregando catálogo…"
+                    : ` ${products.filter((p) => p.active !== false).length} produtos cadastrados.`}
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" asChild className="text-xs">
+              <Link to="/produtos">
+                <Package className="size-3.5" /> Cadastrar produtos
+              </Link>
+            </Button>
           </div>
 
-          {/* Chips de Categorias Dinâmicas (Mercado, Restaurante, Moda, Serviços) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory("todas")}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                selectedCategory === "todas"
-                  ? "bg-primary text-primary-foreground font-semibold"
-                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              Todas as categorias
-            </button>
-
-            {/* Categorias rápidas do Ramo */}
-            {branchConfig.quickCategories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.label)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  selectedCategory === cat.label
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <span>{cat.icon}</span>
-                <span>{cat.label}</span>
-              </button>
-            ))}
-
-            {/* Categorias personalizadas do usuário */}
-            {allCategories.map((cat) => {
-              const alreadyInQuick = branchConfig.quickCategories.some(
-                (q) => q.label.toLowerCase() === cat.toLowerCase(),
-              );
-              if (alreadyInQuick) return null;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    selectedCategory === cat
-                      ? "bg-primary text-primary-foreground font-semibold"
-                      : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                >
-                  <span>{getCategoryEmoji(cat)}</span>
-                  <span>{cat}</span>
-                </button>
-              );
-            })}
+          {/* Teclas de atalho */}
+          <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1.5 p-3 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+              <Check className="size-3.5 text-primary" /> Atalhos do teclado
+            </span>
+            <span><kbd className="kbd">F2</kbd> código de barras</span>
+            <span><kbd className="kbd">F3</kbd> item avulso</span>
+            {currentBranch === "mercado" ? (
+              <span><kbd className="kbd">F4</kbd> pesar por kg</span>
+            ) : null}
+            <span><kbd className="kbd">F8</kbd> finalizar venda</span>
+            <span><kbd className="kbd">F9</kbd> limpar carrinho</span>
+            <span><kbd className="kbd">Esc</kbd> voltar ao código</span>
           </div>
 
-          {/* Grade de Produtos com Loading Skeleton */}
-          {productsLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className="panel flex h-36 flex-col justify-between p-4"
-                >
-                  <div className="space-y-2">
-                    <div className="skeleton h-4 w-3/4" />
-                    <div className="skeleton h-3 w-1/2" />
-                  </div>
-                  <div className="skeleton h-6 w-20" />
-                </div>
-              ))}
-            </div>
-          ) : visible.length ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {visible.map((product) => {
-                const inCartQty = lines
-                  .filter((l) => l.name === product.name && l.price === Number(product.price))
-                  .reduce((sum, l) => sum + l.qty, 0);
-
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => addLine(product.name, Number(product.price))}
-                    className="panel group relative flex h-full min-h-32 flex-col justify-between gap-2 p-3.5 text-left transition-all hover:border-primary/60 hover:bg-secondary/60 active:scale-[0.98]"
-                  >
-                    {/* Badge de quantidade no carrinho */}
-                    {inCartQty > 0 ? (
-                      <span className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-foreground shadow-md ring-2 ring-background">
-                        {inCartQty}
-                      </span>
-                    ) : null}
-
-                    <div>
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-base">{getCategoryEmoji(product.category)}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {product.unit ? product.unit.toUpperCase() : "UN"}
-                        </span>
-                      </div>
-                      <span className="mt-1 line-clamp-2 font-medium leading-snug text-sm">
-                        {product.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-end justify-between pt-1">
-                      <span className="font-display text-base font-bold text-primary sm:text-lg">
-                        {formatBRL(Number(product.price))}
-                      </span>
-                      {product.barcode ? (
-                        <span className="font-mono text-[10px] text-muted-foreground/70">
-                          #{product.barcode.slice(-4)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="panel p-8 text-center text-sm text-muted-foreground">
-              <Store className="mx-auto size-8 text-muted-foreground/50" />
-              <p className="mt-2 font-medium">Nenhum produto cadastrado nesta categoria.</p>
-              <p className="text-xs text-muted-foreground">
-                Cadastre itens com leitor de código de barras ou use a inclusão avulsa abaixo.
-              </p>
-              <Button size="sm" variant="outline" asChild className="mt-3 text-xs">
-                <Link to="/produtos">Cadastrar Produtos</Link>
-              </Button>
-            </div>
-          )}
 
           {/* Recursos Específicos por Ramo: Mesa (Restaurante), Técnico (Serviços), Desconto (Moda) */}
           <div className="grid gap-3 sm:grid-cols-2">
