@@ -21,7 +21,8 @@ import {
   ChevronDown,
   Sparkles,
   Tag,
-  Tag,
+  Check,
+
   Check,
   Loader2,
 } from "lucide-react";
