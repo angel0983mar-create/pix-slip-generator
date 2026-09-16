@@ -56,6 +56,8 @@ export interface Profile {
   pix_key_type: string;
   print_layout: PrintLayout;
   receipt_footer: string | null;
+  business_branch?: string | null;
+  store_logo_url?: string | null;
   plan: string;
   open_order_limit: number;
   next_order_number: number;

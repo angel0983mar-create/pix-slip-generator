@@ -3,6 +3,7 @@
  * Permite usar o PDV antes de criar a conta do Google.
  */
 import type { Product, Profile } from "./domain";
+import type { BusinessBranch } from "./business-branches";
 
 const PRODUCTS_KEY = "cpx.local.products";
 const SETTINGS_KEY = "cpx.local.settings";
@@ -18,6 +19,8 @@ export interface LocalSettings {
   pix_key_type: string;
   print_layout: "a4" | "cupom";
   receipt_footer: string | null;
+  business_branch: BusinessBranch;
+  store_logo_url: string | null;
 }
 
 export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
@@ -30,6 +33,8 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   pix_key_type: "aleatoria",
   print_layout: "a4",
   receipt_footer: null,
+  business_branch: "mercado",
+  store_logo_url: null,
 };
 
 function read<T>(key: string, fallback: T): T {
@@ -86,6 +91,8 @@ export function localProfile(settings: LocalSettings = loadLocalSettings()): Pro
     pix_key_type: settings.pix_key_type,
     print_layout: settings.print_layout,
     receipt_footer: settings.receipt_footer,
+    business_branch: settings.business_branch ?? "mercado",
+    store_logo_url: settings.store_logo_url ?? null,
     plan: "local",
     open_order_limit: 999,
     next_order_number: 1,
