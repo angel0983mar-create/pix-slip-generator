@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Barcode,
@@ -9,7 +9,7 @@ import {
   Package,
   Plus,
   Printer,
-  Search,
+  Settings,
   ShoppingCart,
   Trash2,
   UserPlus,
@@ -20,10 +20,10 @@ import {
   Wrench,
   ChevronDown,
   Sparkles,
-  Store,
   Tag,
   Check,
   Loader2,
+
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -92,25 +92,9 @@ export const Route = createFileRoute("/pdv")({
 
 interface CartLine extends OrderItem {
   key: string;
-  note?: string;
+  note?: string | undefined;
 }
 
-function getCategoryEmoji(category: string | null | undefined): string {
-  if (!category) return "📦";
-  const c = category.toLowerCase();
-  if (c.includes("carne") || c.includes("acougue") || c.includes("frango") || c.includes("boi")) return "🥩";
-  if (c.includes("bebid") || c.includes("suco") || c.includes("refri") || c.includes("cervej") || c.includes("agua")) return "🥤";
-  if (c.includes("padar") || c.includes("pao") || c.includes("bolo") || c.includes("frio") || c.includes("queijo")) return "🥖";
-  if (c.includes("horti") || c.includes("fruta") || c.includes("verd") || c.includes("flv") || c.includes("legum")) return "🍎";
-  if (c.includes("limp") || c.includes("higiene") || c.includes("sabao") || c.includes("deterg")) return "🧼";
-  if (c.includes("lanche") || c.includes("burg") || c.includes("pizza") || c.includes("salgad")) return "🍔";
-  if (c.includes("doce") || c.includes("sobrem") || c.includes("choc")) return "🍰";
-  if (c.includes("roup") || c.includes("moda") || c.includes("camis") || c.includes("vest")) return "👗";
-  if (c.includes("calc") || c.includes("tenis") || c.includes("sapat")) return "👟";
-  if (c.includes("peca") || c.includes("oleo") || c.includes("motor") || c.includes("ferram")) return "⚙️";
-  if (c.includes("serv") || c.includes("mao") || c.includes("repar") || c.includes("laudo")) return "🔧";
-  return "🏷️";
-}
 
 function PdvPage() {
   const navigate = useNavigate();
@@ -123,10 +107,11 @@ function PdvPage() {
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
   const profile: Profile | null = isGuest ? localProfile(settings) : (remoteProfile ?? null);
 
-  // Ramo ativo do PDV
-  const [currentBranch, setCurrentBranch] = useState<BusinessBranch>(
-    (settings.business_branch as BusinessBranch) || "mercado",
-  );
+  // Ramo definido nas Configurações (conta) ou nos dados locais (visitante)
+  const currentBranch: BusinessBranch =
+    ((isGuest ? settings.business_branch : remoteProfile?.business_branch) as BusinessBranch) ||
+    "mercado";
+
 
   // Modal de desejos / sugestões dos clientes
   const [wishlistOpen, setWishlistOpen] = useState(false);
@@ -143,19 +128,17 @@ function PdvPage() {
   const [discountPercent, setDiscountPercent] = useState<number>(0); // Moda / Varejo
   const [itemNote, setItemNote] = useState("");
 
-  // Filtro de categoria selecionada
-  const [selectedCategory, setSelectedCategory] = useState<string>("todas");
-
   const [code, setCode] = useState("");
-  const [term, setTerm] = useState("");
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState("");
   const [method, setMethod] = useState("pix");
+  const [freeOpen, setFreeOpen] = useState(false);
   const [freeName, setFreeName] = useState("");
   const [freePrice, setFreePrice] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Order | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const freeNameRef = useRef<HTMLInputElement>(null);
   const cartRef = useRef<HTMLElement>(null);
 
   const subtotal = lines.reduce((acc, line) => acc + line.qty * line.price, 0);
@@ -164,46 +147,6 @@ function PdvPage() {
   const qtyCount = lines.reduce((acc, line) => acc + line.qty, 0);
 
   const branchConfig = BUSINESS_BRANCHES[currentBranch] ?? BUSINESS_BRANCHES.mercado;
-
-  // Atualizar ramo e salvar nas configurações locais
-  function handleBranchChange(next: BusinessBranch) {
-    setCurrentBranch(next);
-    const updated = saveLocalSettings({ business_branch: next });
-    setSettings(updated);
-    setSelectedCategory("todas");
-    toast.info(`Layout adaptado para: ${BUSINESS_BRANCHES[next].label}`, {
-      icon: BUSINESS_BRANCHES[next].icon,
-    });
-  }
-
-  // Obter lista única de categorias presentes nos produtos cadastrados
-  const allCategories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category?.trim()) set.add(p.category.trim());
-    });
-    return Array.from(set);
-  }, [products]);
-
-  const visible = useMemo(() => {
-    const search = term.trim().toLowerCase();
-    return products
-      .filter((p) => p.active !== false)
-      .filter((p) => {
-        if (selectedCategory !== "todas") {
-          return p.category?.toLowerCase() === selectedCategory.toLowerCase();
-        }
-        return true;
-      })
-      .filter(
-        (p) =>
-          !search ||
-          p.name.toLowerCase().includes(search) ||
-          (p.barcode ?? "").includes(search) ||
-          (p.category ?? "").toLowerCase().includes(search),
-      )
-      .slice(0, 32);
-  }, [products, term, selectedCategory]);
 
   function addLine(name: string, price: number, note?: string) {
     setLines((current) => {
@@ -219,20 +162,73 @@ function PdvPage() {
     event.preventDefault();
     const value = code.trim();
     if (!value) return;
-    const product = products.find(
-      (p) => (p.barcode ?? "").replace(/\s/g, "") === value.replace(/\s/g, ""),
+    const clean = value.replace(/\s/g, "").toLowerCase();
+    const actives = products.filter((p) => p.active !== false);
+
+    const byBarcode = actives.find(
+      (p) => (p.barcode ?? "").replace(/\s/g, "").toLowerCase() === clean,
     );
-    if (product) {
-      addLine(product.name, Number(product.price));
+    const byName =
+      byBarcode ??
+      actives.find((p) => p.name.toLowerCase() === value.trim().toLowerCase()) ??
+      actives.find((p) => p.name.toLowerCase().startsWith(value.trim().toLowerCase()));
+
+    if (byName) {
+      addLine(byName.name, Number(byName.price));
+      toast.success(`${byName.name} — ${formatBRL(Number(byName.price))}`);
       setCode("");
       codeRef.current?.focus();
       return;
     }
-    toast.error(`Código ${value} não cadastrado.`, {
+    toast.error(`"${value}" não está cadastrado.`, {
       action: { label: "Cadastrar", onClick: () => navigate({ to: "/produtos" }) },
     });
     setCode("");
+    codeRef.current?.focus();
   }
+
+  // Teclas de atalho: operar o caixa sem mouse
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "F2") {
+        event.preventDefault();
+        codeRef.current?.focus();
+        codeRef.current?.select();
+        return;
+      }
+      if (event.key === "F3") {
+        event.preventDefault();
+        setFreeOpen(true);
+        setTimeout(() => freeNameRef.current?.focus(), 60);
+        return;
+      }
+      if (event.key === "F4" && currentBranch === "mercado") {
+        event.preventDefault();
+        setScaleModalOpen(true);
+        return;
+      }
+      if (event.key === "F8") {
+        event.preventDefault();
+        if (lines.length && !busy) void checkout();
+        return;
+      }
+      if (event.key === "F9") {
+        event.preventDefault();
+        if (lines.length) {
+          setLines([]);
+          toast.info("Carrinho limpo.");
+        }
+        codeRef.current?.focus();
+        return;
+      }
+      if (event.key === "Escape") {
+        codeRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
 
   function changeQty(key: string, delta: number) {
     setLines((current) =>
@@ -421,29 +417,27 @@ function PdvPage() {
               </div>
             </Link>
 
-            {/* Seletor de Ramo do Negócio */}
-            <Select
-              value={currentBranch}
-              onValueChange={(val) => handleBranchChange(val as BusinessBranch)}
-            >
-              <SelectTrigger className="h-8 w-auto gap-1.5 border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary">
+            {/* Ramo definido nas Configurações */}
+            {isGuest ? (
+              <a
+                href="#config-loja"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary"
+              >
                 <span className="text-sm">{branchConfig.icon}</span>
-                <SelectValue placeholder="Ramo" />
-              </SelectTrigger>
-              <SelectContent align="start" className="w-56">
-                <div className="p-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Selecione o Ramo da Loja
-                </div>
-                {Object.values(BUSINESS_BRANCHES).map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id} className="text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{branch.icon}</span>
-                      <span className="font-medium">{branch.label}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <span className="hidden sm:inline">Ramo nas configurações</span>
+                <Sparkles className="size-3.5 text-primary" />
+              </a>
+            ) : (
+              <Link
+                to="/configuracoes"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary"
+              >
+                <span className="text-sm">{branchConfig.icon}</span>
+                <span className="hidden sm:inline">Ramo nas configurações</span>
+                <Settings className="size-3.5 text-muted-foreground" />
+              </Link>
+            )}
+
           </div>
 
           {/* Ações do Header */}
@@ -541,147 +535,43 @@ function PdvPage() {
             ) : null}
           </div>
 
-          {/* Barra de Busca por Texto */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder={`Buscar em ${branchConfig.label.toLowerCase()}...`}
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
+          {/* Aviso: PDV é somente de inserção — sem seleção de produtos */}
+          <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="flex items-start gap-2.5">
+              <Tag className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="text-sm">
+                <p className="font-medium">Caixa de inserção rápida</p>
+                <p className="text-xs text-muted-foreground">
+                  Bipe o código de barras ou digite o nome do produto e pressione Enter. Nada de
+                  procurar item na tela: o caixa não sai do teclado.
+                  {productsLoading
+                    ? " Carregando catálogo…"
+                    : ` ${products.filter((p) => p.active !== false).length} produtos cadastrados.`}
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" asChild className="text-xs">
+              <Link to="/produtos">
+                <Package className="size-3.5" /> Cadastrar produtos
+              </Link>
+            </Button>
           </div>
 
-          {/* Chips de Categorias Dinâmicas (Mercado, Restaurante, Moda, Serviços) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory("todas")}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                selectedCategory === "todas"
-                  ? "bg-primary text-primary-foreground font-semibold"
-                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              Todas as categorias
-            </button>
-
-            {/* Categorias rápidas do Ramo */}
-            {branchConfig.quickCategories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.label)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  selectedCategory === cat.label
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <span>{cat.icon}</span>
-                <span>{cat.label}</span>
-              </button>
-            ))}
-
-            {/* Categorias personalizadas do usuário */}
-            {allCategories.map((cat) => {
-              const alreadyInQuick = branchConfig.quickCategories.some(
-                (q) => q.label.toLowerCase() === cat.toLowerCase(),
-              );
-              if (alreadyInQuick) return null;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    selectedCategory === cat
-                      ? "bg-primary text-primary-foreground font-semibold"
-                      : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                >
-                  <span>{getCategoryEmoji(cat)}</span>
-                  <span>{cat}</span>
-                </button>
-              );
-            })}
+          {/* Teclas de atalho */}
+          <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1.5 p-3 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+              <Check className="size-3.5 text-primary" /> Atalhos do teclado
+            </span>
+            <span><kbd className="kbd">F2</kbd> código de barras</span>
+            <span><kbd className="kbd">F3</kbd> item avulso</span>
+            {currentBranch === "mercado" ? (
+              <span><kbd className="kbd">F4</kbd> pesar por kg</span>
+            ) : null}
+            <span><kbd className="kbd">F8</kbd> finalizar venda</span>
+            <span><kbd className="kbd">F9</kbd> limpar carrinho</span>
+            <span><kbd className="kbd">Esc</kbd> voltar ao código</span>
           </div>
 
-          {/* Grade de Produtos com Loading Skeleton */}
-          {productsLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className="panel flex h-36 flex-col justify-between p-4"
-                >
-                  <div className="space-y-2">
-                    <div className="skeleton h-4 w-3/4" />
-                    <div className="skeleton h-3 w-1/2" />
-                  </div>
-                  <div className="skeleton h-6 w-20" />
-                </div>
-              ))}
-            </div>
-          ) : visible.length ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {visible.map((product) => {
-                const inCartQty = lines
-                  .filter((l) => l.name === product.name && l.price === Number(product.price))
-                  .reduce((sum, l) => sum + l.qty, 0);
-
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => addLine(product.name, Number(product.price))}
-                    className="panel group relative flex h-full min-h-32 flex-col justify-between gap-2 p-3.5 text-left transition-all hover:border-primary/60 hover:bg-secondary/60 active:scale-[0.98]"
-                  >
-                    {/* Badge de quantidade no carrinho */}
-                    {inCartQty > 0 ? (
-                      <span className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-foreground shadow-md ring-2 ring-background">
-                        {inCartQty}
-                      </span>
-                    ) : null}
-
-                    <div>
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-base">{getCategoryEmoji(product.category)}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {product.unit ? product.unit.toUpperCase() : "UN"}
-                        </span>
-                      </div>
-                      <span className="mt-1 line-clamp-2 font-medium leading-snug text-sm">
-                        {product.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-end justify-between pt-1">
-                      <span className="font-display text-base font-bold text-primary sm:text-lg">
-                        {formatBRL(Number(product.price))}
-                      </span>
-                      {product.barcode ? (
-                        <span className="font-mono text-[10px] text-muted-foreground/70">
-                          #{product.barcode.slice(-4)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="panel p-8 text-center text-sm text-muted-foreground">
-              <Store className="mx-auto size-8 text-muted-foreground/50" />
-              <p className="mt-2 font-medium">Nenhum produto cadastrado nesta categoria.</p>
-              <p className="text-xs text-muted-foreground">
-                Cadastre itens com leitor de código de barras ou use a inclusão avulsa abaixo.
-              </p>
-              <Button size="sm" variant="outline" asChild className="mt-3 text-xs">
-                <Link to="/produtos">Cadastrar Produtos</Link>
-              </Button>
-            </div>
-          )}
 
           {/* Recursos Específicos por Ramo: Mesa (Restaurante), Técnico (Serviços), Desconto (Moda) */}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -745,7 +635,11 @@ function PdvPage() {
           </div>
 
           {/* Item avulso colapsável (limpeza visual) */}
-          <details className="panel group p-4">
+          <details
+            open={freeOpen}
+            onToggle={(e) => setFreeOpen((e.currentTarget as HTMLDetailsElement).open)}
+            className="panel group p-4"
+          >
             <summary className="flex cursor-pointer select-none items-center justify-between text-sm font-medium">
               <span className="flex items-center gap-2">
                 <Plus className="size-4 text-primary" />
@@ -756,6 +650,7 @@ function PdvPage() {
             <div className="mt-3 space-y-3 pt-2 border-t border-border">
               <div className="flex flex-wrap gap-2">
                 <Input
+                  ref={freeNameRef}
                   className="min-w-40 flex-1"
                   placeholder="Descrição do item ou serviço"
                   value={freeName}
@@ -788,7 +683,6 @@ function PdvPage() {
               onSave={(values) => {
                 const saved = saveLocalSettings(values);
                 setSettings(saved);
-                if (values.business_branch) setCurrentBranch(values.business_branch);
               }}
             />
           ) : null}

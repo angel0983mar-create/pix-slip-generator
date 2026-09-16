@@ -15,6 +15,8 @@ import {
 import { useProfile, useUpdateProfile } from "@/hooks/useStore";
 import { PIX_KEY_TYPES } from "@/lib/pix";
 import type { PrintLayout, Profile } from "@/lib/domain";
+import { BUSINESS_BRANCHES, type BusinessBranch } from "@/lib/business-branches";
+
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   head: () => ({
@@ -59,7 +61,10 @@ function SettingsPage() {
         pix_key_type: form.pix_key_type ?? "aleatoria",
         print_layout: form.print_layout ?? "a4",
         receipt_footer: form.receipt_footer || null,
+        business_branch: form.business_branch ?? "mercado",
+        store_logo_url: form.store_logo_url || null,
       });
+
       toast.success("Dados salvos.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível salvar.");
@@ -79,6 +84,38 @@ function SettingsPage() {
 
       <form className="panel space-y-5 p-6" onSubmit={save}>
         <div className="space-y-2">
+          <Label>Ramo do negócio</Label>
+          <Select
+            value={form.business_branch ?? "mercado"}
+            onValueChange={(value) => field("business_branch", value)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.values(BUSINESS_BRANCHES).map((branch) => (
+                <SelectItem key={branch.id} value={branch.id}>
+                  {branch.icon} {branch.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {BUSINESS_BRANCHES[(form.business_branch as BusinessBranch) ?? "mercado"]?.tagline}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="logo">Link do logo da loja (opcional)</Label>
+          <Input
+            id="logo"
+            placeholder="https://exemplo.com/logo.png"
+            value={form.store_logo_url ?? ""}
+            onChange={(e) => field("store_logo_url", e.target.value || null)}
+          />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="loja">Nome da loja</Label>
           <Input
             id="loja"
@@ -86,6 +123,7 @@ function SettingsPage() {
             onChange={(e) => field("store_name", e.target.value)}
           />
         </div>
+
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
