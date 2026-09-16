@@ -143,19 +143,17 @@ function PdvPage() {
   const [discountPercent, setDiscountPercent] = useState<number>(0); // Moda / Varejo
   const [itemNote, setItemNote] = useState("");
 
-  // Filtro de categoria selecionada
-  const [selectedCategory, setSelectedCategory] = useState<string>("todas");
-
   const [code, setCode] = useState("");
-  const [term, setTerm] = useState("");
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState("");
   const [method, setMethod] = useState("pix");
+  const [freeOpen, setFreeOpen] = useState(false);
   const [freeName, setFreeName] = useState("");
   const [freePrice, setFreePrice] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Order | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const freeNameRef = useRef<HTMLInputElement>(null);
   const cartRef = useRef<HTMLElement>(null);
 
   const subtotal = lines.reduce((acc, line) => acc + line.qty * line.price, 0);
@@ -164,46 +162,6 @@ function PdvPage() {
   const qtyCount = lines.reduce((acc, line) => acc + line.qty, 0);
 
   const branchConfig = BUSINESS_BRANCHES[currentBranch] ?? BUSINESS_BRANCHES.mercado;
-
-  // Atualizar ramo e salvar nas configurações locais
-  function handleBranchChange(next: BusinessBranch) {
-    setCurrentBranch(next);
-    const updated = saveLocalSettings({ business_branch: next });
-    setSettings(updated);
-    setSelectedCategory("todas");
-    toast.info(`Layout adaptado para: ${BUSINESS_BRANCHES[next].label}`, {
-      icon: BUSINESS_BRANCHES[next].icon,
-    });
-  }
-
-  // Obter lista única de categorias presentes nos produtos cadastrados
-  const allCategories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category?.trim()) set.add(p.category.trim());
-    });
-    return Array.from(set);
-  }, [products]);
-
-  const visible = useMemo(() => {
-    const search = term.trim().toLowerCase();
-    return products
-      .filter((p) => p.active !== false)
-      .filter((p) => {
-        if (selectedCategory !== "todas") {
-          return p.category?.toLowerCase() === selectedCategory.toLowerCase();
-        }
-        return true;
-      })
-      .filter(
-        (p) =>
-          !search ||
-          p.name.toLowerCase().includes(search) ||
-          (p.barcode ?? "").includes(search) ||
-          (p.category ?? "").toLowerCase().includes(search),
-      )
-      .slice(0, 32);
-  }, [products, term, selectedCategory]);
 
   function addLine(name: string, price: number, note?: string) {
     setLines((current) => {
@@ -219,20 +177,73 @@ function PdvPage() {
     event.preventDefault();
     const value = code.trim();
     if (!value) return;
-    const product = products.find(
-      (p) => (p.barcode ?? "").replace(/\s/g, "") === value.replace(/\s/g, ""),
+    const clean = value.replace(/\s/g, "").toLowerCase();
+    const actives = products.filter((p) => p.active !== false);
+
+    const byBarcode = actives.find(
+      (p) => (p.barcode ?? "").replace(/\s/g, "").toLowerCase() === clean,
     );
-    if (product) {
-      addLine(product.name, Number(product.price));
+    const byName =
+      byBarcode ??
+      actives.find((p) => p.name.toLowerCase() === value.trim().toLowerCase()) ??
+      actives.find((p) => p.name.toLowerCase().startsWith(value.trim().toLowerCase()));
+
+    if (byName) {
+      addLine(byName.name, Number(byName.price));
+      toast.success(`${byName.name} — ${formatBRL(Number(byName.price))}`);
       setCode("");
       codeRef.current?.focus();
       return;
     }
-    toast.error(`Código ${value} não cadastrado.`, {
+    toast.error(`"${value}" não está cadastrado.`, {
       action: { label: "Cadastrar", onClick: () => navigate({ to: "/produtos" }) },
     });
     setCode("");
+    codeRef.current?.focus();
   }
+
+  // Teclas de atalho: operar o caixa sem mouse
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "F2") {
+        event.preventDefault();
+        codeRef.current?.focus();
+        codeRef.current?.select();
+        return;
+      }
+      if (event.key === "F3") {
+        event.preventDefault();
+        setFreeOpen(true);
+        setTimeout(() => freeNameRef.current?.focus(), 60);
+        return;
+      }
+      if (event.key === "F4" && currentBranch === "mercado") {
+        event.preventDefault();
+        setScaleModalOpen(true);
+        return;
+      }
+      if (event.key === "F8") {
+        event.preventDefault();
+        if (lines.length && !busy) void checkout();
+        return;
+      }
+      if (event.key === "F9") {
+        event.preventDefault();
+        if (lines.length) {
+          setLines([]);
+          toast.info("Carrinho limpo.");
+        }
+        codeRef.current?.focus();
+        return;
+      }
+      if (event.key === "Escape") {
+        codeRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
 
   function changeQty(key: string, delta: number) {
     setLines((current) =>
