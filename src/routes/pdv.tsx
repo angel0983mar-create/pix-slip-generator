@@ -95,22 +95,6 @@ interface CartLine extends OrderItem {
   note?: string;
 }
 
-function getCategoryEmoji(category: string | null | undefined): string {
-  if (!category) return "📦";
-  const c = category.toLowerCase();
-  if (c.includes("carne") || c.includes("acougue") || c.includes("frango") || c.includes("boi")) return "🥩";
-  if (c.includes("bebid") || c.includes("suco") || c.includes("refri") || c.includes("cervej") || c.includes("agua")) return "🥤";
-  if (c.includes("padar") || c.includes("pao") || c.includes("bolo") || c.includes("frio") || c.includes("queijo")) return "🥖";
-  if (c.includes("horti") || c.includes("fruta") || c.includes("verd") || c.includes("flv") || c.includes("legum")) return "🍎";
-  if (c.includes("limp") || c.includes("higiene") || c.includes("sabao") || c.includes("deterg")) return "🧼";
-  if (c.includes("lanche") || c.includes("burg") || c.includes("pizza") || c.includes("salgad")) return "🍔";
-  if (c.includes("doce") || c.includes("sobrem") || c.includes("choc")) return "🍰";
-  if (c.includes("roup") || c.includes("moda") || c.includes("camis") || c.includes("vest")) return "👗";
-  if (c.includes("calc") || c.includes("tenis") || c.includes("sapat")) return "👟";
-  if (c.includes("peca") || c.includes("oleo") || c.includes("motor") || c.includes("ferram")) return "⚙️";
-  if (c.includes("serv") || c.includes("mao") || c.includes("repar") || c.includes("laudo")) return "🔧";
-  return "🏷️";
-}
 
 function PdvPage() {
   const navigate = useNavigate();
@@ -651,7 +635,11 @@ function PdvPage() {
           </div>
 
           {/* Item avulso colapsável (limpeza visual) */}
-          <details className="panel group p-4">
+          <details
+            open={freeOpen}
+            onToggle={(e) => setFreeOpen((e.currentTarget as HTMLDetailsElement).open)}
+            className="panel group p-4"
+          >
             <summary className="flex cursor-pointer select-none items-center justify-between text-sm font-medium">
               <span className="flex items-center gap-2">
                 <Plus className="size-4 text-primary" />
@@ -662,6 +650,7 @@ function PdvPage() {
             <div className="mt-3 space-y-3 pt-2 border-t border-border">
               <div className="flex flex-wrap gap-2">
                 <Input
+                  ref={freeNameRef}
                   className="min-w-40 flex-1"
                   placeholder="Descrição do item ou serviço"
                   value={freeName}
@@ -694,7 +683,6 @@ function PdvPage() {
               onSave={(values) => {
                 const saved = saveLocalSettings(values);
                 setSettings(saved);
-                if (values.business_branch) setCurrentBranch(values.business_branch);
               }}
             />
           ) : null}
