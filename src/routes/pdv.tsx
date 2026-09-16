@@ -20,7 +20,7 @@ import {
   Wrench,
   ChevronDown,
   Sparkles,
-  Store,
+  Tag,
   Tag,
   Check,
   Loader2,
