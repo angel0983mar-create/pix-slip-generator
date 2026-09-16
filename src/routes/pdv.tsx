@@ -421,29 +421,27 @@ function PdvPage() {
               </div>
             </Link>
 
-            {/* Seletor de Ramo do Negócio */}
-            <Select
-              value={currentBranch}
-              onValueChange={(val) => handleBranchChange(val as BusinessBranch)}
-            >
-              <SelectTrigger className="h-8 w-auto gap-1.5 border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary">
+            {/* Ramo definido nas Configurações */}
+            {isGuest ? (
+              <a
+                href="#config-loja"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary"
+              >
                 <span className="text-sm">{branchConfig.icon}</span>
-                <SelectValue placeholder="Ramo" />
-              </SelectTrigger>
-              <SelectContent align="start" className="w-56">
-                <div className="p-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Selecione o Ramo da Loja
-                </div>
-                {Object.values(BUSINESS_BRANCHES).map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id} className="text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{branch.icon}</span>
-                      <span className="font-medium">{branch.label}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <span className="hidden sm:inline">Ramo nas configurações</span>
+                <Sparkles className="size-3.5 text-primary" />
+              </a>
+            ) : (
+              <Link
+                to="/configuracoes"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary"
+              >
+                <span className="text-sm">{branchConfig.icon}</span>
+                <span className="hidden sm:inline">Ramo nas configurações</span>
+                <Settings className="size-3.5 text-muted-foreground" />
+              </Link>
+            )}
+
           </div>
 
           {/* Ações do Header */}
