@@ -123,10 +123,11 @@ function PdvPage() {
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
   const profile: Profile | null = isGuest ? localProfile(settings) : (remoteProfile ?? null);
 
-  // Ramo ativo do PDV
-  const [currentBranch, setCurrentBranch] = useState<BusinessBranch>(
-    (settings.business_branch as BusinessBranch) || "mercado",
-  );
+  // Ramo definido nas Configurações (conta) ou nos dados locais (visitante)
+  const currentBranch: BusinessBranch =
+    ((isGuest ? settings.business_branch : remoteProfile?.business_branch) as BusinessBranch) ||
+    "mercado";
+
 
   // Modal de desejos / sugestões dos clientes
   const [wishlistOpen, setWishlistOpen] = useState(false);
