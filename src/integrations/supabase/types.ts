@@ -112,6 +112,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          business_branch: string
           city: string
           created_at: string
           document: string | null
@@ -125,10 +126,12 @@ export type Database = {
           plan: string
           print_layout: string
           receipt_footer: string | null
+          store_logo_url: string | null
           store_name: string
           updated_at: string
         }
         Insert: {
+          business_branch?: string
           city?: string
           created_at?: string
           document?: string | null
@@ -142,10 +145,12 @@ export type Database = {
           plan?: string
           print_layout?: string
           receipt_footer?: string | null
+          store_logo_url?: string | null
           store_name?: string
           updated_at?: string
         }
         Update: {
+          business_branch?: string
           city?: string
           created_at?: string
           document?: string | null
@@ -159,6 +164,7 @@ export type Database = {
           plan?: string
           print_layout?: string
           receipt_footer?: string | null
+          store_logo_url?: string | null
           store_name?: string
           updated_at?: string
         }
