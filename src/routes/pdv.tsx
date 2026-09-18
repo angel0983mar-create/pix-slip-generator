@@ -22,13 +22,18 @@ import {
   Tag,
   Loader2,
   Keyboard,
-  HelpCircle,
   X,
   CreditCard,
   Banknote,
   QrCode,
   ArrowRight,
-  Sparkles,
+  FileText,
+  Car,
+  Check,
+  Calculator,
+  UtensilsCrossed,
+  Shirt,
+  Coins,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -37,13 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -57,7 +56,7 @@ import { useProfile } from "@/hooks/useStore";
 import { useProducts } from "@/hooks/useCatalog";
 import { PAYMENT_METHODS, type Order, type OrderItem, type Profile } from "@/lib/domain";
 import { formatBRL, parseAmount } from "@/lib/format";
-import { buildPixPayload, PIX_KEY_TYPES } from "@/lib/pix";
+import { buildPixPayload } from "@/lib/pix";
 import { printReceipt } from "@/lib/receipt";
 import { buildReceiptImage, downloadDataUrl } from "@/lib/receipt-image";
 import {
@@ -73,7 +72,6 @@ import {
 } from "@/lib/business-branches";
 import { BranchWishlistModal } from "@/components/BranchWishlistModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
-import { LogoUploader } from "@/components/LogoUploader";
 import {
   loadShortcutsConfig,
   matchesKey,
@@ -84,16 +82,16 @@ export const Route = createFileRoute("/pdv")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "PDV Minimalista por Ramo | Comprovante Pix" },
+      { title: "Terminal de Vendas & Orçamentos | Comprovante Pix" },
       {
         name: "description",
         content:
-          "PDV rápido de inserção contínua por código de barras, atalhos de teclado e cobrança Pix imediata.",
+          "PDV e emissor de orçamentos e recibos adaptado para oficina mecânica, restaurante, mercado e varejo.",
       },
-      { property: "og:title", content: "PDV Rápido Minimalista" },
+      { property: "og:title", content: "Terminal de Vendas & Orçamentos" },
       {
         property: "og:description",
-        content: "PDV ágil operado 100% pelo teclado com leitor de código de barras e Pix.",
+        content: "Emissão ágil de orçamentos, recibos e vendas operadas pelo teclado com Pix.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -105,13 +103,14 @@ export const Route = createFileRoute("/pdv")({
 interface CartLine extends OrderItem {
   key: string;
   note?: string | undefined;
+  item_type?: "servico" | "peca" | "produto";
 }
 
 const PAYMENT_OPTIONS = [
-  { id: "pix", label: "Pix", hotkey: "1", icon: QrCode },
-  { id: "dinheiro", label: "Dinheiro", hotkey: "2", icon: Banknote },
-  { id: "credito", label: "Crédito", hotkey: "3", icon: CreditCard },
-  { id: "debito", label: "Débito", hotkey: "4", icon: CreditCard },
+  { id: "pix", label: "Pix", hotkey: "1", icon: QrCode, desc: "QR Code imediato com Copia e Cola" },
+  { id: "dinheiro", label: "Dinheiro", hotkey: "2", icon: Banknote, desc: "Cálculo automático de troco" },
+  { id: "credito", label: "Cartão de Crédito", hotkey: "3", icon: CreditCard, desc: "Recebimento no cartão de crédito" },
+  { id: "debito", label: "Cartão de Débito", hotkey: "4", icon: CreditCard, desc: "Recebimento no cartão de débito" },
 ];
 
 const DISCOUNT_OPTIONS = [
@@ -128,7 +127,7 @@ function PdvPage() {
   const { user, loading: sessionLoading } = useSession();
   const isGuest = !sessionLoading && !user;
   const { data: remoteProfile } = useProfile();
-  const { data: products = [], isLoading: productsLoading } = useProducts();
+  const { data: products = [] } = useProducts();
 
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
   const profile: Profile | null = isGuest ? localProfile(settings) : (remoteProfile ?? null);
@@ -146,6 +145,10 @@ function PdvPage() {
   const [wishlistOpen, setWishlistOpen] = useState(false);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
 
+  // Card / Modal de Pagamento ao Finalizar
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [cashGiven, setCashGiven] = useState("");
+
   // Modal de Pesagem (Mercado)
   const [scaleItemName, setScaleItemName] = useState("");
   const [scalePriceKg, setScalePriceKg] = useState("");
@@ -157,38 +160,87 @@ function PdvPage() {
   const [freePrice, setFreePrice] = useState("");
   const [freeNote, setFreeNote] = useState("");
 
-  // Campos específicos por ramo
-  const [tableNumber, setTableNumber] = useState("");
-  const [technicianName, setTechnicianName] = useState("");
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
-
-  // Estado do Carrinho e Inserção
-  const [code, setCode] = useState("");
+  // Estado Geral do Pedido / Carrinho
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState("");
+  const [customerContact, setCustomerContact] = useState("");
   const [method, setMethod] = useState("pix");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Order | null>(null);
 
+  // Campos específicos de Oficina & Serviços
+  const [serviceDocType, setServiceDocType] = useState<"recibo" | "orcamento">("recibo");
+  const [vehicleEquipment, setVehicleEquipment] = useState(""); // Veículo / Placa / Modelo
+  const [technicianName, setTechnicianName] = useState(""); // Mecânico / Técnico
+  const [serviceDiagnosis, setServiceDiagnosis] = useState(""); // Queixa / Diagnóstico
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServicePrice, setNewServicePrice] = useState("");
+  const [newPartName, setNewPartName] = useState("");
+  const [newPartPrice, setNewPartPrice] = useState("");
+
+  // Campos específicos de Restaurante
+  const [tableNumber, setTableNumber] = useState(""); // Mesa ou Comanda
+  const [hasServiceFee, setHasServiceFee] = useState(false); // Taxa de serviço 10%
+  const [waiterName, setWaiterName] = useState("");
+
+  // Campos específicos de Moda / Varejo
+  const [sellerName, setSellerName] = useState("");
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+
+  // Inserção por código
+  const [code, setCode] = useState("");
   const codeRef = useRef<HTMLInputElement>(null);
   const freeNameRef = useRef<HTMLInputElement>(null);
+  const serviceNameRef = useRef<HTMLInputElement>(null);
+  const cashInputRef = useRef<HTMLInputElement>(null);
 
+  // Cálculos financeiros
   const subtotal = lines.reduce((acc, line) => acc + line.qty * line.price, 0);
+  const serviceFee = currentBranch === "restaurante" && hasServiceFee ? subtotal * 0.1 : 0;
   const discountValue = (subtotal * discountPercent) / 100;
-  const total = Math.max(0, subtotal - discountValue);
+  const total = Math.max(0, subtotal + serviceFee - discountValue);
   const qtyCount = lines.reduce((acc, line) => acc + line.qty, 0);
+
+  // Subtotais específicos para oficina
+  const totalServices = lines
+    .filter((l) => l.item_type === "servico")
+    .reduce((acc, l) => acc + l.qty * l.price, 0);
+  const totalParts = lines
+    .filter((l) => l.item_type === "peca" || !l.item_type)
+    .reduce((acc, l) => acc + l.qty * l.price, 0);
+
+  // Troco calculado para pagamento em dinheiro
+  const cashNumeric = parseAmount(cashGiven);
+  const changeAmount = method === "dinheiro" && cashNumeric > total ? cashNumeric - total : 0;
 
   const branchConfig = BUSINESS_BRANCHES[currentBranch] ?? BUSINESS_BRANCHES.mercado;
 
-  // Auto-foco no campo de inserção ao carregar
+  // Auto-foco inicial
   useEffect(() => {
-    codeRef.current?.focus();
-  }, []);
+    if (currentBranch === "servicos") {
+      serviceNameRef.current?.focus();
+    } else {
+      codeRef.current?.focus();
+    }
+  }, [currentBranch]);
 
-  function addLine(name: string, price: number, qty = 1, note?: string) {
+  // Focar no campo de dinheiro ao abrir modal se dinheiro estiver selecionado
+  useEffect(() => {
+    if (paymentModalOpen && method === "dinheiro") {
+      setTimeout(() => cashInputRef.current?.focus(), 80);
+    }
+  }, [paymentModalOpen, method]);
+
+  function addLine(
+    name: string,
+    price: number,
+    qty = 1,
+    note?: string,
+    item_type: "servico" | "peca" | "produto" = "produto",
+  ) {
     setLines((current) => {
       const foundIndex = current.findIndex(
-        (l) => l.name === name && l.price === price && l.note === note,
+        (l) => l.name === name && l.price === price && l.note === note && l.item_type === item_type,
       );
       if (foundIndex >= 0 && current[foundIndex]) {
         const existing = current[foundIndex];
@@ -205,6 +257,7 @@ function PdvPage() {
         qty,
         price,
         note,
+        item_type,
       };
       return [...current, newLine];
     });
@@ -222,13 +275,12 @@ function PdvPage() {
     setLines((current) => current.filter((l) => l.key !== key));
   }
 
-  // Inserção rápida por código ou busca
+  // Inserção rápida por código ou leitor
   function submitCode(event?: React.FormEvent) {
     if (event) event.preventDefault();
     const raw = code.trim();
     if (!raw) return;
 
-    // Suporte a multiplicador: ex: 3*7891234 ou 2*15.50
     let qtyToInsert = 1;
     let codeToSearch = raw;
     if (raw.includes("*")) {
@@ -256,18 +308,22 @@ function PdvPage() {
       actives.find((p) => p.name.toLowerCase().startsWith(codeToSearch.toLowerCase()));
 
     if (byName) {
-      addLine(byName.name, Number(byName.price), qtyToInsert);
-      toast.success(`${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}${byName.name} — ${formatBRL(Number(byName.price) * qtyToInsert)}`);
+      addLine(byName.name, Number(byName.price), qtyToInsert, undefined, "produto");
+      toast.success(
+        `${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}${byName.name} — ${formatBRL(Number(byName.price) * qtyToInsert)}`,
+      );
       setCode("");
       codeRef.current?.focus();
       return;
     }
 
-    // Se for valor direto (ex: digitou 15,50)
+    // Se for valor digitado direto (ex: 15,50)
     const directPrice = parseAmount(codeToSearch);
     if (directPrice > 0 && /^\d+([.,]\d{1,2})?$/.test(codeToSearch)) {
-      addLine("Item Avulso", directPrice, qtyToInsert);
-      toast.success(`${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}Item Avulso — ${formatBRL(directPrice * qtyToInsert)}`);
+      addLine("Item Avulso", directPrice, qtyToInsert, undefined, "produto");
+      toast.success(
+        `${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}Item Avulso — ${formatBRL(directPrice * qtyToInsert)}`,
+      );
       setCode("");
       codeRef.current?.focus();
       return;
@@ -284,7 +340,46 @@ function PdvPage() {
     codeRef.current?.focus();
   }
 
-  // Inserir item avulso
+  // Inserir serviço (Mão de Obra) em Oficina
+  function handleAddService(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newServiceName.trim();
+    const price = parseAmount(newServicePrice);
+    if (!name) {
+      toast.error("Informe o nome do serviço ou mão de obra.");
+      return;
+    }
+    if (price <= 0) {
+      toast.error("Informe o valor da mão de obra.");
+      return;
+    }
+    addLine(name, price, 1, undefined, "servico");
+    toast.success(`Serviço adicionado: ${name} — ${formatBRL(price)}`);
+    setNewServiceName("");
+    setNewServicePrice("");
+    serviceNameRef.current?.focus();
+  }
+
+  // Inserir peça / material em Oficina
+  function handleAddPart(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newPartName.trim();
+    const price = parseAmount(newPartPrice);
+    if (!name) {
+      toast.error("Informe o nome da peça ou material.");
+      return;
+    }
+    if (price <= 0) {
+      toast.error("Informe o valor da peça.");
+      return;
+    }
+    addLine(name, price, 1, undefined, "peca");
+    toast.success(`Peça adicionada: ${name} — ${formatBRL(price)}`);
+    setNewPartName("");
+    setNewPartPrice("");
+  }
+
+  // Inserir item avulso genérico
   function handleAddFreeItem(e: React.FormEvent) {
     e.preventDefault();
     const name = freeName.trim() || "Item Avulso";
@@ -293,8 +388,7 @@ function PdvPage() {
       toast.error("Informe um valor válido em reais.");
       return;
     }
-
-    addLine(name, price, 1, freeNote.trim() || undefined);
+    addLine(name, price, 1, freeNote.trim() || undefined, "produto");
     toast.success(`${name} adicionado — ${formatBRL(price)}`);
     setFreeName("");
     setFreePrice("");
@@ -315,7 +409,7 @@ function PdvPage() {
     const weightInKg = grams / 1000;
     const calculatedPrice = Math.round(pricePerKg * weightInKg * 100) / 100;
     const itemName = scaleItemName.trim() || "Hortifrúti / Frios";
-    addLine(`${itemName} (${grams}g)`, calculatedPrice);
+    addLine(`${itemName} (${grams}g)`, calculatedPrice, 1, undefined, "produto");
     setScaleModalOpen(false);
     setScaleItemName("");
     setScalePriceKg("");
@@ -324,15 +418,64 @@ function PdvPage() {
     codeRef.current?.focus();
   }
 
-  // Gerenciador Global de Teclas de Atalho (100% sem mouse)
+  // Ação de iniciar fechamento (Abre o Card de Pagamento)
+  function handleInitiateCheckout() {
+    if (!lines.length) {
+      toast.error("Adicione itens, serviços ou peças para continuar.");
+      return;
+    }
+
+    // Se for orçamento puro em oficina, salva direto sem exigir pagamento
+    if (currentBranch === "servicos" && serviceDocType === "orcamento") {
+      void processSaveOrder("orcamento");
+      return;
+    }
+
+    // Abre o card dedicado de pagamento
+    setPaymentModalOpen(true);
+  }
+
+  // Teclas de atalho globais
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       const isInputFocused =
-        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       const isFKey = event.key.startsWith("F") && !isNaN(Number(event.key.slice(1)));
 
-      // Atalho: Foco no Leitor de Código de Barras (F1 padrão)
+      // Quando o modal de pagamento está aberto
+      if (paymentModalOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setPaymentModalOpen(false);
+          return;
+        }
+
+        // Teclas 1, 2, 3, 4 selecionam a forma de pagamento
+        if (["1", "2", "3", "4"].includes(event.key) && (!isInputFocused || target !== cashInputRef.current)) {
+          event.preventDefault();
+          const map: Record<string, string> = {
+            "1": "pix",
+            "2": "dinheiro",
+            "3": "credito",
+            "4": "debito",
+          };
+          const next = map[event.key];
+          if (next) setMethod(next);
+          return;
+        }
+
+        // Enter no modal de pagamento confirma a finalização
+        if (event.key === "Enter" && !busy) {
+          event.preventDefault();
+          void processSaveOrder(method);
+          return;
+        }
+        return;
+      }
+
+      // Atalho: Foco no Leitor (F1)
       if (matchesKey(event, shortcutsConfig.focus_barcode)) {
         event.preventDefault();
         codeRef.current?.focus();
@@ -340,7 +483,7 @@ function PdvPage() {
         return;
       }
 
-      // Atalho: Item Avulso (F2 padrão)
+      // Atalho: Item Avulso (F2)
       if (matchesKey(event, shortcutsConfig.open_free_item)) {
         event.preventDefault();
         setFreeOpen(true);
@@ -348,21 +491,21 @@ function PdvPage() {
         return;
       }
 
-      // Atalho: Balança / Pesar Kg (F3 padrão)
+      // Atalho: Balança (F3)
       if (matchesKey(event, shortcutsConfig.open_weigh)) {
         event.preventDefault();
         setScaleModalOpen(true);
         return;
       }
 
-      // Atalho: Finalizar Venda (F4 ou F8 padrão)
+      // Atalho: Finalizar Venda (F4 ou F8) -> Abre Card de Pagamento
       if (matchesKey(event, shortcutsConfig.checkout) || event.key === "F8") {
         event.preventDefault();
-        if (lines.length && !busy) void checkout();
+        handleInitiateCheckout();
         return;
       }
 
-      // Atalho: Limpar Carrinho (F8 ou F9 padrão)
+      // Atalho: Limpar Carrinho (F9)
       if (matchesKey(event, shortcutsConfig.clear_cart) || event.key === "F9") {
         if (!isInputFocused || isFKey) {
           event.preventDefault();
@@ -370,87 +513,54 @@ function PdvPage() {
             setLines([]);
             toast.info("Carrinho esvaziado.");
           }
-          codeRef.current?.focus();
           return;
         }
       }
 
-      // Atalho: Abrir Consulta de Atalhos (F9 ou F10 padrão)
+      // Atalho: Consultar Atalhos (F10)
       if (matchesKey(event, shortcutsConfig.open_shortcuts) || event.key === "F10") {
         event.preventDefault();
         setShortcutsModalOpen(true);
         return;
       }
 
-      // Esc: Fechar modais / limpar foco e voltar ao leitor
+      // Esc: Fechar qualquer modal
       if (event.key === "Escape") {
         setFreeOpen(false);
         setScaleModalOpen(false);
         setShortcutsModalOpen(false);
         setWishlistOpen(false);
-        codeRef.current?.focus();
-        return;
-      }
-
-      // Atalhos de Seleção de Pagamento: 1, 2, 3, 4 ou Alt+1..4
-      if (
-        event.altKey &&
-        ["1", "2", "3", "4"].includes(event.key)
-      ) {
-        event.preventDefault();
-        const map: Record<string, string> = {
-          "1": "pix",
-          "2": "dinheiro",
-          "3": "credito",
-          "4": "debito",
-        };
-        const selected = map[event.key];
-        if (selected) {
-          setMethod(selected);
-          toast.info(`Pagamento: ${selected.toUpperCase()}`);
+        setPaymentModalOpen(false);
+        if (currentBranch === "servicos") {
+          serviceNameRef.current?.focus();
+        } else {
+          codeRef.current?.focus();
         }
         return;
       }
 
-      // Teclas 1, 2, 3, 4 diretas (quando fora de inputs)
-      if (!isInputFocused && ["1", "2", "3", "4"].includes(event.key)) {
-        event.preventDefault();
-        const map: Record<string, string> = {
-          "1": "pix",
-          "2": "dinheiro",
-          "3": "credito",
-          "4": "debito",
-        };
-        const selected = map[event.key];
-        if (selected) {
-          setMethod(selected);
-          toast.info(`Pagamento: ${selected.toUpperCase()}`);
-        }
-        return;
-      }
-
-      // Atalhos de Seleção de Desconto (Moda): Alt+0, Alt+5, Alt+1, Alt+2, Alt+3
+      // Atalhos de Desconto (Moda): Alt+0, Alt+5, Alt+1, Alt+2, Alt+3
       if (event.altKey && currentBranch === "moda") {
         if (event.key === "0") {
           event.preventDefault();
           setDiscountPercent(0);
-          toast.info("Desconto: 0%");
+          toast.info("Sem desconto");
         } else if (event.key === "5") {
           event.preventDefault();
           setDiscountPercent(5);
-          toast.info("Desconto: 5% aplicado");
+          toast.info("Desconto 5%");
         } else if (event.key === "1") {
           event.preventDefault();
           setDiscountPercent(10);
-          toast.info("Desconto: 10% aplicado");
+          toast.info("Desconto 10%");
         } else if (event.key === "2") {
           event.preventDefault();
           setDiscountPercent(15);
-          toast.info("Desconto: 15% aplicado");
+          toast.info("Desconto 15%");
         } else if (event.key === "3") {
           event.preventDefault();
           setDiscountPercent(20);
-          toast.info("Desconto: 20% aplicado");
+          toast.info("Desconto 20%");
         }
       }
 
@@ -474,40 +584,62 @@ function PdvPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [shortcutsConfig, lines, total, busy, currentBranch, code]);
+  }, [shortcutsConfig, lines, total, busy, currentBranch, code, paymentModalOpen, method]);
 
-  async function checkout() {
+  // Salvar pedido no banco ou localmente
+  async function processSaveOrder(paymentMethodChosen: string) {
     if (!profile) return;
-    if (total <= 0) {
-      toast.error("Adicione itens ao carrinho para finalizar.");
-      codeRef.current?.focus();
+    if (total <= 0 && paymentMethodChosen !== "orcamento") {
+      toast.error("Adicione itens para finalizar.");
       return;
     }
-    if (method === "pix" && !profile.pix_key) {
-      toast.error("Cadastre sua chave Pix em Configurações para gerar a cobrança.");
+    if (paymentMethodChosen === "pix" && !profile.pix_key) {
+      toast.error("Cadastre sua chave Pix em Configurações para gerar o QR Code.");
       return;
     }
 
     setBusy(true);
     try {
-      const items: OrderItem[] = lines.map(({ name, qty, price, note }) => ({
-        name: note ? `${name} [${note}]` : name,
-        qty,
-        price,
-      }));
+      const items: OrderItem[] = lines.map(({ name, qty, price, note, item_type }) => {
+        const typePrefix =
+          currentBranch === "servicos" && item_type === "servico"
+            ? "[SERVIÇO] "
+            : currentBranch === "servicos" && item_type === "peca"
+              ? "[PEÇA] "
+              : "";
+        return {
+          name: `${typePrefix}${name}${note ? ` (${note})` : ""}`,
+          qty,
+          price,
+        };
+      });
 
       const parts: string[] = [];
-      if (currentBranch === "restaurante" && tableNumber.trim()) {
-        parts.push(`Mesa/Comanda: ${tableNumber.trim()}`);
+      if (currentBranch === "servicos") {
+        parts.push(serviceDocType === "orcamento" ? "ORÇAMENTO" : "ORDEM DE SERVIÇO");
+        if (vehicleEquipment.trim()) parts.push(`Veículo/Equip: ${vehicleEquipment.trim()}`);
+        if (technicianName.trim()) parts.push(`Mecânico: ${technicianName.trim()}`);
+        if (serviceDiagnosis.trim()) parts.push(`Diag: ${serviceDiagnosis.trim()}`);
+      } else if (currentBranch === "restaurante") {
+        if (tableNumber.trim()) parts.push(`Mesa/Comanda: ${tableNumber.trim()}`);
+        if (waiterName.trim()) parts.push(`Atendente: ${waiterName.trim()}`);
+        if (hasServiceFee) parts.push("Taxa 10%");
+      } else if (currentBranch === "moda") {
+        if (sellerName.trim()) parts.push(`Vendedor: ${sellerName.trim()}`);
+        if (discountPercent > 0) parts.push(`Desc. ${discountPercent}%`);
       }
-      if (currentBranch === "servicos" && technicianName.trim()) {
-        parts.push(`Técnico: ${technicianName.trim()}`);
-      }
-      if (discountPercent > 0) {
-        parts.push(`Desc. ${discountPercent}%`);
-      }
+
       parts.push(items.map((i) => `${i.qty}x ${i.name}`).join(", "));
-      const description = parts.join(" | ").slice(0, 150);
+      const description = parts.join(" | ").slice(0, 180);
+
+      // Nome do cliente
+      const finalCustomer =
+        customer.trim() ||
+        (currentBranch === "restaurante" && tableNumber
+          ? `Mesa ${tableNumber}`
+          : currentBranch === "servicos" && vehicleEquipment
+            ? vehicleEquipment
+            : "Cliente");
 
       if (isGuest) {
         const number = nextLocalOrderNumber();
@@ -516,15 +648,15 @@ function PdvPage() {
           id: `local-${number}`,
           user_id: "local",
           order_number: number,
-          customer_name: customer.trim() || (tableNumber ? `Mesa ${tableNumber}` : "Cliente"),
-          customer_contact: null,
+          customer_name: finalCustomer,
+          customer_contact: customerContact.trim() || null,
           description,
           items,
           amount: total,
-          status: "aberto",
-          payment_method: method,
+          status: paymentMethodChosen === "orcamento" ? "aberto" : "pago",
+          payment_method: paymentMethodChosen,
           pix_payload:
-            method === "pix" && profile.pix_key
+            paymentMethodChosen === "pix" && profile.pix_key
               ? buildPixPayload({
                   key: profile.pix_key,
                   keyType: profile.pix_key_type,
@@ -535,16 +667,19 @@ function PdvPage() {
                   description,
                 })
               : null,
-          notes: null,
+          notes: serviceDiagnosis.trim() || null,
           due_date: null,
-          paid_at: null,
+          paid_at: paymentMethodChosen === "orcamento" ? null : now,
           created_at: now,
           updated_at: now,
         };
         setResult(order);
+        setPaymentModalOpen(false);
         setLines([]);
         setCustomer("");
+        setCustomerContact("");
         setDiscountPercent(0);
+        setCashGiven("");
         return;
       }
 
@@ -552,18 +687,20 @@ function PdvPage() {
         .from("orders")
         .insert({
           user_id: user!.id,
-          customer_name: customer.trim() || (tableNumber ? `Mesa ${tableNumber}` : "Cliente"),
+          customer_name: finalCustomer,
+          customer_contact: customerContact.trim() || null,
           description,
           items: items as unknown as never,
           amount: total,
-          payment_method: method,
-          status: "aberto",
+          payment_method: paymentMethodChosen,
+          status: paymentMethodChosen === "orcamento" ? "aberto" : "aberto",
+          notes: serviceDiagnosis.trim() || null,
         })
         .select("id, order_number")
         .single();
       if (error) throw error;
 
-      if (method === "pix" && profile.pix_key) {
+      if (paymentMethodChosen === "pix" && profile.pix_key) {
         const payload = buildPixPayload({
           key: profile.pix_key,
           keyType: profile.pix_key_type,
@@ -577,12 +714,15 @@ function PdvPage() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      setPaymentModalOpen(false);
       setLines([]);
       setCustomer("");
+      setCustomerContact("");
       setDiscountPercent(0);
+      setCashGiven("");
       navigate({ to: "/pedidos/$id", params: { id: created.id } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível finalizar a venda.");
+      toast.error(error instanceof Error ? error.message : "Não foi possível concluir.");
     } finally {
       setBusy(false);
     }
@@ -600,7 +740,6 @@ function PdvPage() {
       {/* Header Minimalista: Identidade da loja e Link para Configurações */}
       <header className="sticky top-0 z-30 border-b border-border/50 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
-          {/* Dados da Loja & Atalho para Configurações do Ramo */}
           <div className="flex items-center gap-3">
             {profile?.store_logo_url ? (
               <img
@@ -616,14 +755,20 @@ function PdvPage() {
 
             <div>
               <span className="font-semibold text-sm leading-tight block">
-                {profile?.store_name ?? "PDV Rápido"}
+                {profile?.store_name ?? "Minha Loja"}
               </span>
               <span className="text-[11px] text-muted-foreground">
-                Terminal de Vendas
+                {currentBranch === "servicos"
+                  ? "Emissor de Orçamentos & Serviços"
+                  : currentBranch === "restaurante"
+                    ? "Gestão de Mesas & Comandas"
+                    : currentBranch === "moda"
+                      ? "Varejo & Moda"
+                      : "Terminal de Caixa"}
               </span>
             </div>
 
-            {/* Ramo com indicação clara para ir às Configurações (não é aba no PDV) */}
+            {/* Ramo com indicação de alterar em Configurações */}
             <div className="ml-2 pl-3 border-l border-border/50">
               <Link
                 to="/configuracoes"
@@ -640,7 +785,6 @@ function PdvPage() {
             </div>
           </div>
 
-          {/* Ações Rápidas do Header */}
           <div className="flex items-center gap-1.5">
             <Button
               variant="ghost"
@@ -677,161 +821,455 @@ function PdvPage() {
         </div>
       </header>
 
-      {/* Corpo Principal do PDV */}
+      {/* Corpo Principal do PDV / Gerador de Pedidos */}
       <main className="mx-auto max-w-7xl px-4 pt-4">
         <div className="grid gap-5 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_390px]">
-          {/* Coluna Esquerda: Terminal de Inserção Contínua & Tabela de Itens */}
+          {/* ============================================================ */}
+          {/* COLUNA ESQUERDA: LAYOUT ADAPTADO AO RAMO                     */}
+          {/* ============================================================ */}
           <section className="space-y-4">
-            {/* Barra Principal de Inserção Contínua (Sem seleção de produtos) */}
-            <div className="rounded-xl border border-border/60 bg-card/40 p-3.5 backdrop-blur-sm shadow-xs">
-              <form onSubmit={submitCode} className="space-y-2.5">
-                <div className="relative flex items-center">
-                  <Barcode className="absolute left-3 size-5 text-muted-foreground" />
-                  <Input
-                    ref={codeRef}
-                    className="h-12 pl-11 pr-24 text-sm sm:text-base font-mono bg-background/80 border-border/70 focus-visible:ring-1 focus-visible:ring-primary"
-                    placeholder="Bipe o código de barras ou digite o código/nome e tecle Enter..."
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    autoComplete="off"
-                  />
-                  <div className="absolute right-2 flex items-center gap-1">
-                    <kbd className="hidden sm:inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                      {shortcutsConfig.focus_barcode || "F1"}
-                    </kbd>
-                    <Button type="submit" size="sm" className="h-8 px-2.5 text-xs">
-                      Inserir
-                    </Button>
+            {/* ---------------------------------------------------------- */}
+            {/* RAMO 1: OFICINA MECÂNICA / ASSISTÊNCIA / SERVIÇOS          */}
+            {/* ---------------------------------------------------------- */}
+            {currentBranch === "servicos" ? (
+              <div className="space-y-4">
+                {/* Seletor de Tipo: Orçamento vs Ordem de Serviço / Recibo */}
+                <div className="rounded-xl border border-border/60 bg-card/40 p-4 backdrop-blur-sm space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="size-4 text-blue-400" />
+                      <span className="text-sm font-semibold">Oficina & Serviços</span>
+                    </div>
+
+                    <div className="inline-flex rounded-lg border border-border/60 bg-secondary/30 p-0.5 text-xs font-medium">
+                      <button
+                        type="button"
+                        onClick={() => setServiceDocType("recibo")}
+                        className={`px-3 py-1 rounded-md transition-colors ${
+                          serviceDocType === "recibo"
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Ordem de Serviço / Recibo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setServiceDocType("orcamento")}
+                        className={`px-3 py-1 rounded-md transition-colors ${
+                          serviceDocType === "orcamento"
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Gerar Orçamento
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dados do Veículo / Equipamento & Cliente */}
+                  <div className="grid gap-2.5 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Veículo / Equipamento
+                      </Label>
+                      <Input
+                        placeholder="Ex: Fiat Palio 2018 - ABC1D23"
+                        value={vehicleEquipment}
+                        onChange={(e) => setVehicleEquipment(e.target.value)}
+                        className="h-8 text-xs bg-background/60"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Mecânico / Técnico
+                      </Label>
+                      <Input
+                        placeholder="Nome do responsável"
+                        value={technicianName}
+                        onChange={(e) => setTechnicianName(e.target.value)}
+                        className="h-8 text-xs bg-background/60"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        WhatsApp / Contato
+                      </Label>
+                      <Input
+                        placeholder="(00) 00000-0000"
+                        value={customerContact}
+                        onChange={(e) => setCustomerContact(e.target.value)}
+                        className="h-8 text-xs bg-background/60"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Diagnóstico / Queixa do Cliente
+                    </Label>
+                    <Input
+                      placeholder="Ex: Barulho na suspensão dianteira ao frear"
+                      value={serviceDiagnosis}
+                      onChange={(e) => setServiceDiagnosis(e.target.value)}
+                      className="h-8 text-xs bg-background/60"
+                    />
                   </div>
                 </div>
 
-                {/* Linha de Funções Rápidas por Teclado */}
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant={freeOpen ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setFreeOpen(!freeOpen);
-                        if (!freeOpen) setTimeout(() => freeNameRef.current?.focus(), 60);
-                      }}
-                      className="h-7 text-xs gap-1.5 border-border/60"
-                    >
-                      <Plus className="size-3.5" />
-                      <span>Item Avulso</span>
-                      <kbd className="rounded bg-muted/60 px-1 text-[10px] font-mono">
-                        {shortcutsConfig.open_free_item || "F2"}
-                      </kbd>
-                    </Button>
+                {/* Seção de Inserção: Serviços (Mão de Obra) */}
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-blue-400 flex items-center gap-1.5">
+                      <Wrench className="size-3.5" /> 1. Inserir Mão de Obra / Serviços
+                    </span>
+                    <span className="text-[11px] font-mono text-blue-400 font-bold">
+                      Subtotal Serviços: {formatBRL(totalServices)}
+                    </span>
+                  </div>
 
-                    {currentBranch === "mercado" ? (
+                  <form onSubmit={handleAddService} className="grid gap-2 sm:grid-cols-[1fr_130px_auto]">
+                    <Input
+                      ref={serviceNameRef}
+                      placeholder="Ex: Troca de pastilhas de freio e sangria"
+                      value={newServiceName}
+                      onChange={(e) => setNewServiceName(e.target.value)}
+                      className="h-9 text-xs bg-background"
+                    />
+                    <Input
+                      placeholder="Mão de Obra (R$)"
+                      inputMode="decimal"
+                      value={newServicePrice}
+                      onChange={(e) => setNewServicePrice(e.target.value)}
+                      className="h-9 text-xs font-mono bg-background"
+                    />
+                    <Button type="submit" size="sm" className="h-9 text-xs">
+                      <Plus className="size-3.5 mr-1" /> Adicionar Serviço
+                    </Button>
+                  </form>
+                </div>
+
+                {/* Seção de Inserção: Peças e Materiais */}
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                      <Package className="size-3.5" /> 2. Inserir Peças e Materiais Aplicados
+                    </span>
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                      Subtotal Peças: {formatBRL(totalParts)}
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleAddPart} className="grid gap-2 sm:grid-cols-[1fr_130px_auto]">
+                    <Input
+                      placeholder="Ex: Jogo de Pastilhas Dianteiras Bosch"
+                      value={newPartName}
+                      onChange={(e) => setNewPartName(e.target.value)}
+                      className="h-9 text-xs bg-background"
+                    />
+                    <Input
+                      placeholder="Valor Peça (R$)"
+                      inputMode="decimal"
+                      value={newPartPrice}
+                      onChange={(e) => setNewPartPrice(e.target.value)}
+                      className="h-9 text-xs font-mono bg-background"
+                    />
+                    <Button type="submit" variant="secondary" size="sm" className="h-9 text-xs">
+                      <Plus className="size-3.5 mr-1" /> Adicionar Peça
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---------------------------------------------------------- */}
+            {/* RAMO 2: RESTAURANTE & LANCHONETE (Comandas & Mesas)       */}
+            {/* ---------------------------------------------------------- */}
+            {currentBranch === "restaurante" ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 backdrop-blur-sm space-y-3">
+                  <div className="flex items-center justify-between border-b border-amber-500/20 pb-2.5">
+                    <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs">
+                      <ChefHat className="size-4" />
+                      <span>Identificação do Pedido / Mesa</span>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={hasServiceFee}
+                        onChange={(e) => setHasServiceFee(e.target.checked)}
+                        className="rounded border-border accent-primary size-3.5"
+                      />
+                      <span>Incluir 10% de serviço (+{formatBRL(serviceFee)})</span>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-amber-300">Número da Mesa ou Comanda</Label>
+                      <Input
+                        placeholder="Ex: Mesa 04 / Comanda 12"
+                        value={tableNumber}
+                        onChange={(e) => setTableNumber(e.target.value)}
+                        className="h-8 text-xs bg-background/70 font-semibold"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-amber-300">Atendente / Garçom</Label>
+                      <Input
+                        placeholder="Nome de quem atendeu"
+                        value={waiterName}
+                        onChange={(e) => setWaiterName(e.target.value)}
+                        className="h-8 text-xs bg-background/70"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inserção de Itens / Bebidas / Pratos */}
+                <div className="rounded-xl border border-border/60 bg-card/40 p-3.5 backdrop-blur-sm">
+                  <form onSubmit={submitCode} className="space-y-2">
+                    <div className="relative flex items-center">
+                      <Barcode className="absolute left-3 size-4 text-muted-foreground" />
+                      <Input
+                        ref={codeRef}
+                        className="h-10 pl-10 pr-20 text-xs sm:text-sm font-mono bg-background/80 border-border/70"
+                        placeholder=""
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        autoComplete="off"
+                      />
+                      <Button type="submit" size="sm" className="absolute right-1.5 h-7 px-2.5 text-xs">
+                        Lançar
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant={freeOpen ? "default" : "outline"}
                         size="sm"
-                        onClick={() => setScaleModalOpen(true)}
+                        onClick={() => setFreeOpen(!freeOpen)}
+                        className="h-7 text-xs gap-1"
+                      >
+                        <Plus className="size-3" /> Item / Prato Avulso
+                      </Button>
+                      <span className="text-[11px] text-muted-foreground">
+                        Multiplicador: <code className="font-mono text-foreground">2*código</code>
+                      </span>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---------------------------------------------------------- */}
+            {/* RAMO 3: MODA & VAREJO (Vendedor & Descontos)               */}
+            {/* ---------------------------------------------------------- */}
+            {currentBranch === "moda" ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-pink-500/20 bg-pink-500/5 p-3.5 backdrop-blur-sm space-y-3">
+                  <div className="flex items-center gap-2 text-pink-400 font-semibold text-xs">
+                    <Shirt className="size-4" />
+                    <span>Varejo & Vestuário</span>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-pink-300">Vendedor / Consultor</Label>
+                      <Input
+                        placeholder="Nome do vendedor"
+                        value={sellerName}
+                        onChange={(e) => setSellerName(e.target.value)}
+                        className="h-8 text-xs bg-background/70"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-pink-300">Desconto Balcão</Label>
+                      <div className="grid grid-cols-5 gap-1">
+                        {DISCOUNT_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.pct}
+                            type="button"
+                            onClick={() => setDiscountPercent(opt.pct)}
+                            className={`rounded py-1 text-xs font-medium transition-colors ${
+                              discountPercent === opt.pct
+                                ? "bg-primary text-primary-foreground font-bold"
+                                : "bg-secondary/40 text-muted-foreground hover:bg-secondary"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inserção de Etiqueta / Código de Barras */}
+                <div className="rounded-xl border border-border/60 bg-card/40 p-3.5 backdrop-blur-sm">
+                  <form onSubmit={submitCode} className="space-y-2">
+                    <div className="relative flex items-center">
+                      <Barcode className="absolute left-3 size-4 text-muted-foreground" />
+                      <Input
+                        ref={codeRef}
+                        className="h-10 pl-10 pr-20 text-xs sm:text-sm font-mono bg-background/80 border-border/70"
+                        placeholder=""
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        autoComplete="off"
+                      />
+                      <Button type="submit" size="sm" className="absolute right-1.5 h-7 px-2.5 text-xs">
+                        Inserir
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <Button
+                        type="button"
+                        variant={freeOpen ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setFreeOpen(!freeOpen)}
+                        className="h-7 text-xs gap-1"
+                      >
+                        <Plus className="size-3" /> Peça Avulsa
+                      </Button>
+                      <span className="text-[11px] text-muted-foreground">
+                        Atalhos de desconto: <kbd className="font-mono text-foreground">Alt+0</kbd> a <kbd className="font-mono text-foreground">Alt+3</kbd>
+                      </span>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---------------------------------------------------------- */}
+            {/* RAMO 4 E 5: MERCADO & COMÉRCIO GERAL (Inserção Contínua)  */}
+            {/* ---------------------------------------------------------- */}
+            {currentBranch === "mercado" || currentBranch === "geral" ? (
+              <div className="rounded-xl border border-border/60 bg-card/40 p-3.5 backdrop-blur-sm shadow-xs">
+                <form onSubmit={submitCode} className="space-y-2.5">
+                  <div className="relative flex items-center">
+                    <Barcode className="absolute left-3 size-5 text-muted-foreground" />
+                    <Input
+                      ref={codeRef}
+                      className="h-12 pl-11 pr-24 text-sm sm:text-base font-mono bg-background/80 border-border/70 focus-visible:ring-1 focus-visible:ring-primary"
+                      placeholder=""
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <div className="absolute right-2 flex items-center gap-1">
+                      <kbd className="hidden sm:inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                        {shortcutsConfig.focus_barcode || "F1"}
+                      </kbd>
+                      <Button type="submit" size="sm" className="h-8 px-2.5 text-xs">
+                        Inserir
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Linha de Funções Rápidas por Teclado */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={freeOpen ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setFreeOpen(!freeOpen);
+                          if (!freeOpen) setTimeout(() => freeNameRef.current?.focus(), 60);
+                        }}
                         className="h-7 text-xs gap-1.5 border-border/60"
                       >
-                        <Scale className="size-3.5 text-emerald-400" />
-                        <span>Pesar por Kg</span>
+                        <Plus className="size-3.5" />
+                        <span>Item Avulso</span>
                         <kbd className="rounded bg-muted/60 px-1 text-[10px] font-mono">
-                          {shortcutsConfig.open_weigh || "F3"}
+                          {shortcutsConfig.open_free_item || "F2"}
                         </kbd>
                       </Button>
-                    ) : null}
-                  </div>
 
-                  <span className="text-[11px] text-muted-foreground/80 hidden md:inline">
-                    Multiplicador: digite <code className="font-mono text-foreground">3*código</code> ou <code className="font-mono text-foreground">2*15.00</code>
-                  </span>
-                </div>
-              </form>
+                      {currentBranch === "mercado" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setScaleModalOpen(true)}
+                          className="h-7 text-xs gap-1.5 border-border/60"
+                        >
+                          <Scale className="size-3.5 text-emerald-400" />
+                          <span>Pesar por Kg</span>
+                          <kbd className="rounded bg-muted/60 px-1 text-[10px] font-mono">
+                            {shortcutsConfig.open_weigh || "F3"}
+                          </kbd>
+                        </Button>
+                      ) : null}
+                    </div>
 
-              {/* Inserção de Item Avulso Inline (sem sair do teclado) */}
-              {freeOpen ? (
-                <form
-                  onSubmit={handleAddFreeItem}
-                  className="mt-3 rounded-lg border border-primary/20 bg-secondary/30 p-3 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between text-xs font-semibold text-primary">
-                    <span className="flex items-center gap-1.5">
-                      <Tag className="size-3.5" /> Inserção Rápida de Item Avulso
+                    <span className="text-[11px] text-muted-foreground/80 hidden md:inline">
+                      Multiplicador: digite <code className="font-mono text-foreground">3*código</code> ou <code className="font-mono text-foreground">2*15.00</code>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setFreeOpen(false)}
-                      className="text-muted-foreground hover:text-foreground text-xs"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_auto]">
-                    <Input
-                      ref={freeNameRef}
-                      className="h-8 text-xs bg-background"
-                      placeholder="Descrição do item ou serviço"
-                      value={freeName}
-                      onChange={(e) => setFreeName(e.target.value)}
-                    />
-                    <Input
-                      className="h-8 text-xs font-mono bg-background"
-                      inputMode="decimal"
-                      placeholder="Valor (R$)"
-                      value={freePrice}
-                      onChange={(e) => setFreePrice(e.target.value)}
-                    />
-                    <Input
-                      className="h-8 text-xs bg-background"
-                      placeholder="Observação (opcional)"
-                      value={freeNote}
-                      onChange={(e) => setFreeNote(e.target.value)}
-                    />
-                    <Button type="submit" size="sm" className="h-8 text-xs">
-                      Lançar
-                    </Button>
                   </div>
                 </form>
-              ) : null}
-            </div>
-
-            {/* Campos Específicos por Ramo (Minimalistas) */}
-            {currentBranch === "restaurante" ? (
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-center gap-3">
-                <ChefHat className="size-4 text-amber-400 shrink-0" />
-                <div className="flex-1 flex items-center gap-2">
-                  <Label className="text-xs shrink-0 font-medium text-amber-300">Mesa / Comanda:</Label>
-                  <Input
-                    placeholder="Ex: Mesa 04 ou Comanda 12"
-                    value={tableNumber}
-                    onChange={(e) => setTableNumber(e.target.value)}
-                    className="h-8 text-xs max-w-xs bg-background/60"
-                  />
-                </div>
               </div>
             ) : null}
 
-            {currentBranch === "servicos" ? (
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 flex items-center gap-3">
-                <Wrench className="size-4 text-blue-400 shrink-0" />
-                <div className="flex-1 flex items-center gap-2">
-                  <Label className="text-xs shrink-0 font-medium text-blue-300">Técnico / Atendente:</Label>
-                  <Input
-                    placeholder="Ex: Carlos Mecânica / Maria Manicure"
-                    value={technicianName}
-                    onChange={(e) => setTechnicianName(e.target.value)}
-                    className="h-8 text-xs max-w-xs bg-background/60"
-                  />
+            {/* Inserção de Item Avulso Inline (se aberto) */}
+            {freeOpen ? (
+              <form
+                onSubmit={handleAddFreeItem}
+                className="rounded-lg border border-primary/20 bg-secondary/30 p-3 space-y-2.5"
+              >
+                <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                  <span className="flex items-center gap-1.5">
+                    <Tag className="size-3.5" /> Inserção de Item Avulso
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFreeOpen(false)}
+                    className="text-muted-foreground hover:text-foreground text-xs"
+                  >
+                    <X className="size-3.5" />
+                  </button>
                 </div>
-              </div>
+
+                <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_auto]">
+                  <Input
+                    ref={freeNameRef}
+                    className="h-8 text-xs bg-background"
+                    placeholder="Descrição do item"
+                    value={freeName}
+                    onChange={(e) => setFreeName(e.target.value)}
+                  />
+                  <Input
+                    className="h-8 text-xs font-mono bg-background"
+                    inputMode="decimal"
+                    placeholder="Valor (R$)"
+                    value={freePrice}
+                    onChange={(e) => setFreePrice(e.target.value)}
+                  />
+                  <Input
+                    className="h-8 text-xs bg-background"
+                    placeholder="Observação (opcional)"
+                    value={freeNote}
+                    onChange={(e) => setFreeNote(e.target.value)}
+                  />
+                  <Button type="submit" size="sm" className="h-8 text-xs">
+                    Lançar
+                  </Button>
+                </div>
+              </form>
             ) : null}
 
-            {/* Tabela Minimalista de Itens do Cupom */}
+            {/* TABELA DE ITENS INSERIDOS NO PEDIDO / ORÇAMENTO */}
             <div className="rounded-xl border border-border/60 bg-card/40 backdrop-blur-sm overflow-hidden">
               <div className="flex items-center justify-between border-b border-border/50 px-4 py-2.5 text-xs text-muted-foreground">
                 <span className="font-semibold uppercase tracking-wider text-foreground">
-                  Itens Lançados ({qtyCount})
+                  {currentBranch === "servicos"
+                    ? `Itens da OS / Orçamento (${qtyCount})`
+                    : `Itens Lançados (${qtyCount})`}
                 </span>
                 <span className="text-[11px]">
                   Use <code className="font-mono text-foreground">+</code> / <code className="font-mono text-foreground">-</code> para ajustar quantidade
@@ -839,17 +1277,16 @@ function PdvPage() {
               </div>
 
               {lines.length === 0 ? (
-                <div className="py-16 text-center space-y-2">
-                  <Barcode className="mx-auto size-10 text-muted-foreground/30" />
+                <div className="py-12 text-center space-y-1.5">
+                  <FileText className="mx-auto size-9 text-muted-foreground/30" />
                   <p className="text-sm font-medium text-muted-foreground">
-                    Nenhum produto inserido no caixa.
-                  </p>
-                  <p className="text-xs text-muted-foreground/80">
-                    Bipe com o leitor ou tecle <kbd className="font-mono text-foreground">{shortcutsConfig.focus_barcode || "F1"}</kbd> para focar no campo.
+                    {currentBranch === "servicos"
+                      ? "Nenhum serviço ou peça inserido no orçamento."
+                      : "Nenhum item lançado no momento."}
                   </p>
                 </div>
               ) : (
-                <div className="divide-y divide-border/40 max-h-[480px] overflow-y-auto">
+                <div className="divide-y divide-border/40 max-h-[460px] overflow-y-auto">
                   {lines.map((line, index) => (
                     <div
                       key={line.key}
@@ -860,9 +1297,20 @@ function PdvPage() {
                       </span>
 
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs sm:text-sm font-medium leading-tight truncate">
-                          {line.name}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {currentBranch === "servicos" && line.item_type === "servico" ? (
+                            <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-400/40 text-blue-400 bg-blue-400/10">
+                              Serviço
+                            </Badge>
+                          ) : currentBranch === "servicos" && line.item_type === "peca" ? (
+                            <Badge variant="outline" className="text-[9px] py-0 px-1 border-emerald-400/40 text-emerald-400 bg-emerald-400/10">
+                              Peça
+                            </Badge>
+                          ) : null}
+                          <p className="text-xs sm:text-sm font-medium leading-tight truncate">
+                            {line.name}
+                          </p>
+                        </div>
                         {line.note ? (
                           <p className="text-[11px] text-amber-400 mt-0.5">Obs: {line.note}</p>
                         ) : null}
@@ -914,7 +1362,7 @@ function PdvPage() {
               )}
             </div>
 
-            {/* Configurações Locais de Visitante (Discreta, sem poluição) */}
+            {/* Configurações Locais de Visitante */}
             {isGuest ? (
               <PixSetupPanel
                 settings={settings}
@@ -926,13 +1374,19 @@ function PdvPage() {
             ) : null}
           </section>
 
-          {/* Coluna Direita: Resumo Financeiro & Fechamento Minimalista */}
+          {/* ============================================================ */}
+          {/* COLUNA DIREITA: RESUMO FINANCEIRO & BOTÃO DE FINALIZAR       */}
+          {/* ============================================================ */}
           <aside className="space-y-4 lg:sticky lg:top-16 lg:self-start">
             <div className="rounded-xl border border-border/60 bg-card/40 p-4 backdrop-blur-sm space-y-4">
-              {/* Display do Total da Venda */}
-              <div className="rounded-lg border border-border/50 bg-secondary/30 p-3.5 space-y-1">
+              {/* Display do Total Geral */}
+              <div className="rounded-lg border border-border/50 bg-secondary/30 p-3.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Total a Pagar</span>
+                  <span>
+                    {currentBranch === "servicos" && serviceDocType === "orcamento"
+                      ? "Valor do Orçamento"
+                      : "Total da Cobrança"}
+                  </span>
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {qtyCount} {qtyCount === 1 ? "item" : "itens"}
                   </Badge>
@@ -942,103 +1396,67 @@ function PdvPage() {
                   {formatBRL(total)}
                 </div>
 
+                {/* Subtotais detalhados por ramo */}
+                {currentBranch === "servicos" ? (
+                  <div className="space-y-0.5 pt-1.5 border-t border-border/40 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span>Mão de Obra:</span>
+                      <span className="font-mono font-medium text-blue-400">{formatBRL(totalServices)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Peças & Materiais:</span>
+                      <span className="font-mono font-medium text-emerald-400">{formatBRL(totalParts)}</span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {currentBranch === "restaurante" && hasServiceFee ? (
+                  <div className="flex justify-between pt-1 border-t border-border/40 text-[11px] text-muted-foreground">
+                    <span>Taxa de serviço (10%):</span>
+                    <span className="font-mono font-medium text-amber-400">+{formatBRL(serviceFee)}</span>
+                  </div>
+                ) : null}
+
                 {discountPercent > 0 ? (
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-border/40 text-muted-foreground">
-                    <span>Subtotal: {formatBRL(subtotal)}</span>
-                    <span className="text-pink-400">-{discountPercent}% ({formatBRL(discountValue)})</span>
+                    <span>Desconto ({discountPercent}%):</span>
+                    <span className="text-pink-400 font-mono">-{formatBRL(discountValue)}</span>
                   </div>
                 ) : null}
               </div>
 
-              {/* Seletor de Desconto (Moda / Varejo com atalhos de teclado) */}
-              {currentBranch === "moda" ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-medium">
-                    <span className="flex items-center gap-1 text-pink-400">
-                      <Percent className="size-3.5" /> Desconto Balcão
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {DISCOUNT_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.pct}
-                        type="button"
-                        onClick={() => setDiscountPercent(opt.pct)}
-                        className={`flex flex-col items-center justify-center rounded-md border py-1.5 text-xs font-medium transition-colors ${
-                          discountPercent === opt.pct
-                            ? "border-primary bg-primary text-primary-foreground font-bold shadow-xs"
-                            : "border-border/50 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-                        }`}
-                      >
-                        <span>{opt.label}</span>
-                        <span className="text-[9px] opacity-70 font-mono">{opt.hotkey}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Seletor de Forma de Pagamento com Teclas de Atalho [1] [2] [3] [4] */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
-                  <span>Forma de Pagamento</span>
-                  <span className="text-[10px] font-mono">Teclas [1] a [4]</span>
-                </Label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {PAYMENT_OPTIONS.map((opt) => {
-                    const Icon = opt.icon;
-                    const isSelected = method === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setMethod(opt.id)}
-                        className={`flex items-center justify-between rounded-lg border px-2.5 py-2 text-xs font-medium transition-all ${
-                          isSelected
-                            ? "border-primary bg-primary/10 text-primary font-semibold ring-1 ring-primary/40 shadow-xs"
-                            : "border-border/50 bg-secondary/20 text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <Icon className="size-3.5 shrink-0" />
-                          <span className="truncate">{opt.label}</span>
-                        </div>
-                        <kbd className="rounded border border-border/60 bg-muted/80 px-1 py-0.2 text-[10px] font-mono">
-                          {opt.hotkey}
-                        </kbd>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Identificação Opcional do Cliente */}
+              {/* Identificação do Cliente */}
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Cliente (opcional)</Label>
+                <Label className="text-xs text-muted-foreground">Nome do Cliente</Label>
                 <Input
                   className="h-8 text-xs bg-background/60"
-                  placeholder="Nome do cliente no comprovante"
+                  placeholder="Nome do cliente"
                   value={customer}
                   onChange={(e) => setCustomer(e.target.value)}
                 />
               </div>
 
-              {/* Botões de Ação Final */}
+              {/* Botão de Finalização Principal */}
               <div className="space-y-2 pt-2 border-t border-border/50">
                 <Button
                   className="w-full h-11 text-sm font-semibold tracking-wide justify-between"
                   disabled={busy || !lines.length}
-                  onClick={checkout}
+                  onClick={handleInitiateCheckout}
                 >
                   {busy ? (
                     <span className="flex items-center gap-2 mx-auto">
-                      <Loader2 className="size-4 animate-spin" /> Gerando cobrança...
+                      <Loader2 className="size-4 animate-spin" /> Concluindo...
                     </span>
+                  ) : currentBranch === "servicos" && serviceDocType === "orcamento" ? (
+                    <>
+                      <span>Salvar & Emitir Orçamento</span>
+                      <FileText className="size-4" />
+                    </>
                   ) : (
                     <>
-                      <span>Finalizar Venda</span>
+                      <span>Finalizar e Pagar</span>
                       <kbd className="rounded bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[11px]">
-                        {shortcutsConfig.checkout || "F4 / F8"}
+                        F8
                       </kbd>
                     </>
                   )}
@@ -1052,13 +1470,15 @@ function PdvPage() {
                     onClick={() => {
                       setLines([]);
                       toast.info("Carrinho esvaziado.");
-                      codeRef.current?.focus();
+                      if (currentBranch === "servicos") {
+                        serviceNameRef.current?.focus();
+                      } else {
+                        codeRef.current?.focus();
+                      }
                     }}
                   >
-                    <span>Limpar Carrinho</span>
-                    <kbd className="font-mono text-[10px]">
-                      {shortcutsConfig.clear_cart || "F9"}
-                    </kbd>
+                    <span>Limpar Tudo</span>
+                    <kbd className="font-mono text-[10px]">F9</kbd>
                   </Button>
                 ) : null}
               </div>
@@ -1071,7 +1491,11 @@ function PdvPage() {
                 profile={profile}
                 onClose={() => {
                   setResult(null);
-                  codeRef.current?.focus();
+                  if (currentBranch === "servicos") {
+                    serviceNameRef.current?.focus();
+                  } else {
+                    codeRef.current?.focus();
+                  }
                 }}
                 onSignIn={signInWithGoogle}
               />
@@ -1079,6 +1503,135 @@ function PdvPage() {
           </aside>
         </div>
       </main>
+
+      {/* ============================================================ */}
+      {/* CARD / MODAL DEDICADO DE FORMA DE PAGAMENTO AO FINALIZAR     */}
+      {/* ============================================================ */}
+      <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <Coins className="size-5 text-primary" />
+                <span>Escolha a Forma de Pagamento</span>
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Selecione com as teclas <kbd className="font-mono text-foreground font-bold">1</kbd>, <kbd className="font-mono text-foreground font-bold">2</kbd>, <kbd className="font-mono text-foreground font-bold">3</kbd> ou <kbd className="font-mono text-foreground font-bold">4</kbd>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* Total Destacado */}
+            <div className="rounded-xl border border-primary/30 bg-primary/10 p-3.5 text-center">
+              <p className="text-xs text-muted-foreground font-medium">Total a Pagar</p>
+              <p className="text-3xl font-mono font-extrabold text-primary">{formatBRL(total)}</p>
+            </div>
+
+            {/* Grid de Formas de Pagamento */}
+            <div className="grid gap-2">
+              {PAYMENT_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const isSelected = method === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setMethod(opt.id)}
+                    className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/15 text-foreground ring-1 ring-primary shadow-xs"
+                        : "border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`grid size-9 place-items-center rounded-lg ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <Icon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold leading-tight text-foreground">{opt.label}</p>
+                        <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
+                      </div>
+                    </div>
+
+                    <kbd
+                      className={`rounded px-2 py-0.5 font-mono text-xs font-bold border ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-border"
+                      }`}
+                    >
+                      {opt.hotkey}
+                    </kbd>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Campo Opcional de Dinheiro Recebido para Troco */}
+            {method === "dinheiro" ? (
+              <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="cash-given" className="text-xs font-medium">
+                    Valor Entregue pelo Cliente (R$)
+                  </Label>
+                  {changeAmount > 0 ? (
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      Troco: {formatBRL(changeAmount)}
+                    </span>
+                  ) : null}
+                </div>
+                <Input
+                  ref={cashInputRef}
+                  id="cash-given"
+                  placeholder="Ex: 50,00"
+                  value={cashGiven}
+                  onChange={(e) => setCashGiven(e.target.value)}
+                  className="h-9 text-sm font-mono"
+                  inputMode="decimal"
+                />
+              </div>
+            ) : null}
+
+            {/* Botões de Ação do Modal */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/50">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPaymentModalOpen(false)}
+                className="text-xs"
+              >
+                Voltar (Esc)
+              </Button>
+              <Button
+                type="button"
+                size="default"
+                className="gap-2 font-semibold"
+                disabled={busy}
+                onClick={() => processSaveOrder(method)}
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Concluindo...
+                  </>
+                ) : (
+                  <>
+                    <span>Confirmar e Emitir</span>
+                    <kbd className="rounded bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[10px]">
+                      Enter
+                    </kbd>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Balança / Pesagem (Mercado) */}
       <Dialog open={scaleModalOpen} onOpenChange={setScaleModalOpen}>
@@ -1127,7 +1680,11 @@ function PdvPage() {
 
             {parseAmount(scalePriceKg) > 0 && parseFloat(scaleGrams) > 0 ? (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-center text-xs font-mono text-emerald-400 font-bold">
-                Total calculado: {formatBRL(Math.round(parseAmount(scalePriceKg) * (parseFloat(scaleGrams) / 1000) * 100) / 100)}
+                Total:{" "}
+                {formatBRL(
+                  Math.round(parseAmount(scalePriceKg) * (parseFloat(scaleGrams) / 1000) * 100) /
+                    100,
+                )}
               </div>
             ) : null}
 
