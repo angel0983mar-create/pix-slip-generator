@@ -170,12 +170,96 @@ export type Database = {
         }
         Relationships: []
       }
+      store_invites: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          label: string | null
+          owner_id: string
+          revoked: boolean
+          role: string
+          token: string
+          uses: number
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          label?: string | null
+          owner_id: string
+          revoked?: boolean
+          role?: string
+          token?: string
+          uses?: number
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          label?: string | null
+          owner_id?: string
+          revoked?: boolean
+          role?: string
+          token?: string
+          uses?: number
+        }
+        Relationships: []
+      }
+      store_members: {
+        Row: {
+          created_at: string
+          id: string
+          member_email: string | null
+          member_id: string
+          owner_id: string
+          role: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          member_email?: string | null
+          member_id: string
+          owner_id: string
+          role?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          member_email?: string | null
+          member_id?: string
+          owner_id?: string
+          role?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      accept_store_invite: {
+        Args: { _token: string }
+        Returns: {
+          owner_id: string
+          role: string
+        }[]
+      }
+      my_store: {
+        Args: never
+        Returns: {
+          owner_id: string
+          role: string
+        }[]
+      }
+      store_invite_info: {
+        Args: { _token: string }
+        Returns: {
+          role: string
+          store_name: string
+          valid: boolean
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
