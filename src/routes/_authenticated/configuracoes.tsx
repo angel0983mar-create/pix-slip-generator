@@ -387,21 +387,26 @@ function SettingsPage() {
                       {def.description}
                     </p>
                   </div>
-                  <Select
+                  <Input
                     value={currentKey}
-                    onValueChange={(val) => handleShortcutChange(def.id, val)}
-                  >
-                    <SelectTrigger className="h-7 w-20 text-[11px] font-mono font-bold bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AVAILABLE_SHORTCUT_KEYS.map((k) => (
-                        <SelectItem key={k} value={k} className="text-xs font-mono">
-                          {k}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(e) => handleShortcutChange(def.id, e.target.value.toUpperCase().trim())}
+                    onKeyDown={(e) => {
+                      if (e.key === "Tab") return;
+                      e.preventDefault();
+                      let keyName = e.key;
+                      if (e.altKey && e.key !== "Alt") {
+                        keyName = `Alt+${e.key.toUpperCase()}`;
+                      } else if (e.ctrlKey && e.key !== "Control") {
+                        keyName = `Ctrl+${e.key.toUpperCase()}`;
+                      } else if (e.key.length === 1) {
+                        keyName = e.key.toUpperCase();
+                      }
+                      handleShortcutChange(def.id, keyName);
+                    }}
+                    className="h-7 w-20 text-[11px] font-mono font-bold text-center bg-background border-border/80"
+                    placeholder="Tecla"
+                    title="Digite ou pressione a tecla desejada no teclado"
+                  />
                 </div>
               );
             })}

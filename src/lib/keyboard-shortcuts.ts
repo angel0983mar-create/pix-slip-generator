@@ -105,14 +105,26 @@ export function saveShortcutsConfig(config: Partial<Record<ShortcutActionId, str
 }
 
 export function matchesKey(event: KeyboardEvent, targetKey: string): boolean {
+  if (!targetKey) return false;
   const normTarget = targetKey.toUpperCase().trim();
 
   // Caso com modificador Alt+X
   if (normTarget.startsWith("ALT+")) {
-    const letter = normTarget.slice(4);
+    const letter = normTarget.slice(4).trim();
     return event.altKey && event.key.toUpperCase() === letter;
   }
 
-  // Tecla simples (F1, F2, F3... ou Insert)
-  return event.key.toUpperCase() === normTarget && !event.altKey && !event.ctrlKey && !event.metaKey;
+  // Caso com modificador Ctrl+X
+  if (normTarget.startsWith("CTRL+")) {
+    const letter = normTarget.slice(5).trim();
+    return event.ctrlKey && event.key.toUpperCase() === letter;
+  }
+
+  // Tecla simples (F1..F12, Insert, Delete, +, -, Esc, etc.)
+  return (
+    event.key.toUpperCase() === normTarget &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  );
 }

@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -112,21 +113,28 @@ export function KeyboardShortcutsModal({
                 </div>
 
                 {isEditing ? (
-                  <Select
-                    value={currentKey}
-                    onValueChange={(val) => handleKeyChange(def.id, val)}
-                  >
-                    <SelectTrigger className="h-8 w-24 text-xs font-mono font-bold">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AVAILABLE_SHORTCUT_KEYS.map((k) => (
-                        <SelectItem key={k} value={k} className="text-xs font-mono">
-                          {k}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={currentKey}
+                      onChange={(e) => handleKeyChange(def.id, e.target.value.toUpperCase().trim())}
+                      onKeyDown={(e) => {
+                        if (e.key === "Tab") return;
+                        e.preventDefault();
+                        let keyName = e.key;
+                        if (e.altKey && e.key !== "Alt") {
+                          keyName = `Alt+${e.key.toUpperCase()}`;
+                        } else if (e.ctrlKey && e.key !== "Control") {
+                          keyName = `Ctrl+${e.key.toUpperCase()}`;
+                        } else if (e.key.length === 1) {
+                          keyName = e.key.toUpperCase();
+                        }
+                        handleKeyChange(def.id, keyName);
+                      }}
+                      className="h-8 w-24 text-xs font-mono font-bold text-center bg-background border-border/80"
+                      placeholder="Pressione..."
+                      title="Digite ou pressione a tecla desejada no teclado"
+                    />
+                  </div>
                 ) : (
                   <kbd className="grid min-w-10 place-items-center rounded-lg border border-border bg-secondary/80 px-2.5 py-1 font-mono text-xs font-bold text-primary shadow-sm">
                     {currentKey}
