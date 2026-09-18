@@ -188,3 +188,15 @@
     display: none;
   }
 }
+
+.kbd {
+  display: inline-block;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  padding: 0.05rem 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--foreground);
+}

@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Barcode,
@@ -9,7 +9,7 @@ import {
   Package,
   Plus,
   Printer,
-  Search,
+  Settings,
   ShoppingCart,
   Trash2,
   UserPlus,
@@ -18,11 +18,17 @@ import {
   Percent,
   ChefHat,
   Wrench,
-  Store,
+  ChevronDown,
   Tag,
   Loader2,
   Keyboard,
-  PlusCircle,
+  HelpCircle,
+  X,
+  CreditCard,
+  Banknote,
+  QrCode,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,7 +72,6 @@ import {
   type BusinessBranch,
 } from "@/lib/business-branches";
 import { BranchWishlistModal } from "@/components/BranchWishlistModal";
-import { QuickItemModal } from "@/components/QuickItemModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LogoUploader } from "@/components/LogoUploader";
 import {
@@ -79,16 +84,16 @@ export const Route = createFileRoute("/pdv")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "PDV rápido por Ramo — Mercado, Restaurante, Moda & Serviços | Comprovante Pix" },
+      { title: "PDV Minimalista por Ramo | Comprovante Pix" },
       {
         name: "description",
         content:
-          "PDV adaptável para supermercados, restaurantes, lojas e serviços. Passe código de barras, pese por kg, comande mesas e gere cobrança Pix com recibo na hora.",
+          "PDV rápido de inserção contínua por código de barras, atalhos de teclado e cobrança Pix imediata.",
       },
-      { property: "og:title", content: "PDV rápido adaptável por ramo com Pix" },
+      { property: "og:title", content: "PDV Rápido Minimalista" },
       {
         property: "og:description",
-        content: "PDV para mercado, restaurante e varejo com código de barras, pesagem, mesas e QR Code Pix.",
+        content: "PDV ágil operado 100% pelo teclado com leitor de código de barras e Pix.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -99,25 +104,23 @@ export const Route = createFileRoute("/pdv")({
 
 interface CartLine extends OrderItem {
   key: string;
-  note?: string;
+  note?: string | undefined;
 }
 
-function getCategoryEmoji(category: string | null | undefined): string {
-  if (!category) return "📦";
-  const c = category.toLowerCase();
-  if (c.includes("carne") || c.includes("acougue") || c.includes("frango") || c.includes("boi")) return "🥩";
-  if (c.includes("bebid") || c.includes("suco") || c.includes("refri") || c.includes("cervej") || c.includes("agua")) return "🥤";
-  if (c.includes("padar") || c.includes("pao") || c.includes("bolo") || c.includes("frio") || c.includes("queijo")) return "🥖";
-  if (c.includes("horti") || c.includes("fruta") || c.includes("verd") || c.includes("flv") || c.includes("legum")) return "🍎";
-  if (c.includes("limp") || c.includes("higiene") || c.includes("sabao") || c.includes("deterg")) return "🧼";
-  if (c.includes("lanche") || c.includes("burg") || c.includes("pizza") || c.includes("salgad")) return "🍔";
-  if (c.includes("doce") || c.includes("sobrem") || c.includes("choc")) return "🍰";
-  if (c.includes("roup") || c.includes("moda") || c.includes("camis") || c.includes("vest")) return "👗";
-  if (c.includes("calc") || c.includes("tenis") || c.includes("sapat")) return "👟";
-  if (c.includes("peca") || c.includes("oleo") || c.includes("motor") || c.includes("ferram")) return "⚙️";
-  if (c.includes("serv") || c.includes("mao") || c.includes("repar") || c.includes("laudo")) return "🔧";
-  return "🏷️";
-}
+const PAYMENT_OPTIONS = [
+  { id: "pix", label: "Pix", hotkey: "1", icon: QrCode },
+  { id: "dinheiro", label: "Dinheiro", hotkey: "2", icon: Banknote },
+  { id: "credito", label: "Crédito", hotkey: "3", icon: CreditCard },
+  { id: "debito", label: "Débito", hotkey: "4", icon: CreditCard },
+];
+
+const DISCOUNT_OPTIONS = [
+  { pct: 0, label: "0%", hotkey: "Alt+0" },
+  { pct: 5, label: "5%", hotkey: "Alt+5" },
+  { pct: 10, label: "10%", hotkey: "Alt+1" },
+  { pct: 15, label: "15%", hotkey: "Alt+2" },
+  { pct: 20, label: "20%", hotkey: "Alt+3" },
+];
 
 function PdvPage() {
   const navigate = useNavigate();
@@ -130,20 +133,17 @@ function PdvPage() {
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
   const profile: Profile | null = isGuest ? localProfile(settings) : (remoteProfile ?? null);
 
-  // Ramo ativo do PDV
-  const [currentBranch, setCurrentBranch] = useState<BusinessBranch>(
-    (settings.business_branch as BusinessBranch) || "mercado",
-  );
+  // Ramo definido nas Configurações da Loja
+  const currentBranch: BusinessBranch =
+    ((isGuest ? settings.business_branch : remoteProfile?.business_branch) as BusinessBranch) ||
+    "mercado";
 
   // Atalhos de teclado
   const [shortcutsConfig, setShortcutsConfig] = useState<Record<ShortcutActionId, string>>(() =>
     loadShortcutsConfig(),
   );
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
-
-  // Modais
   const [wishlistOpen, setWishlistOpen] = useState(false);
-  const [quickItemOpen, setQuickItemOpen] = useState(false);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
 
   // Modal de Pesagem (Mercado)
@@ -151,23 +151,27 @@ function PdvPage() {
   const [scalePriceKg, setScalePriceKg] = useState("");
   const [scaleGrams, setScaleGrams] = useState("");
 
-  // Campos específicos de ramos
-  const [tableNumber, setTableNumber] = useState(""); // Restaurante
-  const [technicianName, setTechnicianName] = useState(""); // Serviços
-  const [discountPercent, setDiscountPercent] = useState<number>(0); // Moda / Varejo
+  // Inserção de Item Avulso Inline
+  const [freeOpen, setFreeOpen] = useState(false);
+  const [freeName, setFreeName] = useState("");
+  const [freePrice, setFreePrice] = useState("");
+  const [freeNote, setFreeNote] = useState("");
 
-  // Filtro de categoria selecionada
-  const [selectedCategory, setSelectedCategory] = useState<string>("todas");
+  // Campos específicos por ramo
+  const [tableNumber, setTableNumber] = useState("");
+  const [technicianName, setTechnicianName] = useState("");
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
+  // Estado do Carrinho e Inserção
   const [code, setCode] = useState("");
-  const [term, setTerm] = useState("");
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState("");
   const [method, setMethod] = useState("pix");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Order | null>(null);
+
   const codeRef = useRef<HTMLInputElement>(null);
-  const cartRef = useRef<HTMLElement>(null);
+  const freeNameRef = useRef<HTMLInputElement>(null);
 
   const subtotal = lines.reduce((acc, line) => acc + line.qty * line.price, 0);
   const discountValue = (subtotal * discountPercent) / 100;
@@ -176,130 +180,34 @@ function PdvPage() {
 
   const branchConfig = BUSINESS_BRANCHES[currentBranch] ?? BUSINESS_BRANCHES.mercado;
 
-  // Atualizar ramo e salvar nas configurações locais
-  function handleBranchChange(next: BusinessBranch) {
-    setCurrentBranch(next);
-    const updated = saveLocalSettings({ business_branch: next });
-    setSettings(updated);
-    setSelectedCategory("todas");
-    toast.info(`Layout adaptado para: ${BUSINESS_BRANCHES[next].label}`, {
-      icon: BUSINESS_BRANCHES[next].icon,
-    });
-  }
-
-  // Listener Global de Atalhos de Teclado
+  // Auto-foco no campo de inserção ao carregar
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      // Se estiver digitando em input/textarea, não interceptar a menos que seja tecla de função (F1..F12)
-      const target = event.target as HTMLElement | null;
-      const isInputFocused =
-        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+    codeRef.current?.focus();
+  }, []);
 
-      const isFKey = event.key.startsWith("F") && !isNaN(Number(event.key.slice(1)));
-
-      if (matchesKey(event, shortcutsConfig.focus_barcode)) {
-        event.preventDefault();
-        codeRef.current?.focus();
-        codeRef.current?.select();
-        return;
-      }
-
-      if (matchesKey(event, shortcutsConfig.open_free_item)) {
-        event.preventDefault();
-        setQuickItemOpen(true);
-        return;
-      }
-
-      if (matchesKey(event, shortcutsConfig.open_weigh)) {
-        event.preventDefault();
-        setScaleModalOpen(true);
-        return;
-      }
-
-      if (matchesKey(event, shortcutsConfig.checkout)) {
-        event.preventDefault();
-        checkout();
-        return;
-      }
-
-      if (matchesKey(event, shortcutsConfig.clear_cart)) {
-        if (!isInputFocused || isFKey) {
-          event.preventDefault();
-          if (lines.length) {
-            setLines([]);
-            toast.info("Carrinho esvaziado.");
-          }
-          return;
-        }
-      }
-
-      if (matchesKey(event, shortcutsConfig.open_shortcuts)) {
-        event.preventDefault();
-        setShortcutsModalOpen(true);
-        return;
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [shortcutsConfig, lines, total, busy, profile, method, customer, currentBranch, tableNumber, technicianName, discountPercent]);
-
-  // Obter lista única de categorias presentes nos produtos cadastrados
-  const allCategories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category?.trim()) set.add(p.category.trim());
-    });
-    return Array.from(set);
-  }, [products]);
-
-  const visible = useMemo(() => {
-    const search = term.trim().toLowerCase();
-    return products
-      .filter((p) => p.active !== false)
-      .filter((p) => {
-        if (selectedCategory !== "todas") {
-          return p.category?.toLowerCase() === selectedCategory.toLowerCase();
-        }
-        return true;
-      })
-      .filter(
-        (p) =>
-          !search ||
-          p.name.toLowerCase().includes(search) ||
-          (p.barcode ?? "").includes(search) ||
-          (p.category ?? "").toLowerCase().includes(search),
-      )
-      .slice(0, 32);
-  }, [products, term, selectedCategory]);
-
-  function addLine(name: string, price: number, note?: string) {
+  function addLine(name: string, price: number, qty = 1, note?: string) {
     setLines((current) => {
-      const found = current.find((l) => l.name === name && l.price === price && l.note === note);
-      if (found) {
-        return current.map((l) => (l === found ? { ...l, qty: l.qty + 1 } : l));
+      const foundIndex = current.findIndex(
+        (l) => l.name === name && l.price === price && l.note === note,
+      );
+      if (foundIndex >= 0 && current[foundIndex]) {
+        const existing = current[foundIndex];
+        const updated = [...current];
+        updated[foundIndex] = {
+          ...existing,
+          qty: existing.qty + qty,
+        };
+        return updated;
       }
-      return [...current, { key: `${name}-${Date.now()}`, name, qty: 1, price, note }];
+      const newLine: CartLine = {
+        key: `${name}-${Date.now()}-${Math.random()}`,
+        name,
+        qty,
+        price,
+        note,
+      };
+      return [...current, newLine];
     });
-  }
-
-  function submitCode(event: React.FormEvent) {
-    event.preventDefault();
-    const value = code.trim();
-    if (!value) return;
-    const product = products.find(
-      (p) => (p.barcode ?? "").replace(/\s/g, "") === value.replace(/\s/g, ""),
-    );
-    if (product) {
-      addLine(product.name, Number(product.price));
-      setCode("");
-      codeRef.current?.focus();
-      return;
-    }
-    toast.error(`Código ${value} não cadastrado.`, {
-      action: { label: "Cadastrar", onClick: () => navigate({ to: "/produtos" }) },
-    });
-    setCode("");
   }
 
   function changeQty(key: string, delta: number) {
@@ -310,12 +218,98 @@ function PdvPage() {
     );
   }
 
+  function removeLine(key: string) {
+    setLines((current) => current.filter((l) => l.key !== key));
+  }
+
+  // Inserção rápida por código ou busca
+  function submitCode(event?: React.FormEvent) {
+    if (event) event.preventDefault();
+    const raw = code.trim();
+    if (!raw) return;
+
+    // Suporte a multiplicador: ex: 3*7891234 ou 2*15.50
+    let qtyToInsert = 1;
+    let codeToSearch = raw;
+    if (raw.includes("*")) {
+      const parts = raw.split("*");
+      const firstPart = parts[0]?.trim();
+      const secondPart = parts[1]?.trim();
+      if (firstPart && secondPart) {
+        const parsedQty = parseInt(firstPart, 10);
+        if (!isNaN(parsedQty) && parsedQty > 0) {
+          qtyToInsert = parsedQty;
+          codeToSearch = secondPart;
+        }
+      }
+    }
+
+    const clean = codeToSearch.replace(/\s/g, "").toLowerCase();
+    const actives = products.filter((p) => p.active !== false);
+
+    const byBarcode = actives.find(
+      (p) => (p.barcode ?? "").replace(/\s/g, "").toLowerCase() === clean,
+    );
+    const byName =
+      byBarcode ??
+      actives.find((p) => p.name.toLowerCase() === codeToSearch.toLowerCase()) ??
+      actives.find((p) => p.name.toLowerCase().startsWith(codeToSearch.toLowerCase()));
+
+    if (byName) {
+      addLine(byName.name, Number(byName.price), qtyToInsert);
+      toast.success(`${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}${byName.name} — ${formatBRL(Number(byName.price) * qtyToInsert)}`);
+      setCode("");
+      codeRef.current?.focus();
+      return;
+    }
+
+    // Se for valor direto (ex: digitou 15,50)
+    const directPrice = parseAmount(codeToSearch);
+    if (directPrice > 0 && /^\d+([.,]\d{1,2})?$/.test(codeToSearch)) {
+      addLine("Item Avulso", directPrice, qtyToInsert);
+      toast.success(`${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}Item Avulso — ${formatBRL(directPrice * qtyToInsert)}`);
+      setCode("");
+      codeRef.current?.focus();
+      return;
+    }
+
+    toast.error(`"${codeToSearch}" não encontrado.`, {
+      description: "Pressione F2 para lançar como avulso ou cadastre em Produtos.",
+      action: {
+        label: "Cadastrar",
+        onClick: () => navigate({ to: "/produtos" }),
+      },
+    });
+    setCode("");
+    codeRef.current?.focus();
+  }
+
+  // Inserir item avulso
+  function handleAddFreeItem(e: React.FormEvent) {
+    e.preventDefault();
+    const name = freeName.trim() || "Item Avulso";
+    const price = parseAmount(freePrice);
+    if (price <= 0) {
+      toast.error("Informe um valor válido em reais.");
+      return;
+    }
+
+    addLine(name, price, 1, freeNote.trim() || undefined);
+    toast.success(`${name} adicionado — ${formatBRL(price)}`);
+    setFreeName("");
+    setFreePrice("");
+    setFreeNote("");
+    setFreeOpen(false);
+    codeRef.current?.focus();
+  }
+
+  // Inserir item pesado por kg (Mercado)
   function handleAddWeighedItem(e: React.FormEvent) {
     e.preventDefault();
     const pricePerKg = parseAmount(scalePriceKg);
     const grams = parseFloat(scaleGrams.replace(",", "."));
     if (pricePerKg <= 0 || isNaN(grams) || grams <= 0) {
-      toast.error("Informe o preço por quilo e o peso válido em gramas.");
+      toast.error("Informe o preço por kg e o peso em gramas.");
       return;
     }
     const weightInKg = grams / 1000;
@@ -326,17 +320,171 @@ function PdvPage() {
     setScaleItemName("");
     setScalePriceKg("");
     setScaleGrams("");
-    toast.success(`Adicionado: ${itemName} — ${formatBRL(calculatedPrice)}`);
+    toast.success(`${itemName} (${grams}g) — ${formatBRL(calculatedPrice)}`);
+    codeRef.current?.focus();
   }
+
+  // Gerenciador Global de Teclas de Atalho (100% sem mouse)
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isInputFocused =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const isFKey = event.key.startsWith("F") && !isNaN(Number(event.key.slice(1)));
+
+      // Atalho: Foco no Leitor de Código de Barras (F1 padrão)
+      if (matchesKey(event, shortcutsConfig.focus_barcode)) {
+        event.preventDefault();
+        codeRef.current?.focus();
+        codeRef.current?.select();
+        return;
+      }
+
+      // Atalho: Item Avulso (F2 padrão)
+      if (matchesKey(event, shortcutsConfig.open_free_item)) {
+        event.preventDefault();
+        setFreeOpen(true);
+        setTimeout(() => freeNameRef.current?.focus(), 60);
+        return;
+      }
+
+      // Atalho: Balança / Pesar Kg (F3 padrão)
+      if (matchesKey(event, shortcutsConfig.open_weigh)) {
+        event.preventDefault();
+        setScaleModalOpen(true);
+        return;
+      }
+
+      // Atalho: Finalizar Venda (F4 ou F8 padrão)
+      if (matchesKey(event, shortcutsConfig.checkout) || event.key === "F8") {
+        event.preventDefault();
+        if (lines.length && !busy) void checkout();
+        return;
+      }
+
+      // Atalho: Limpar Carrinho (F8 ou F9 padrão)
+      if (matchesKey(event, shortcutsConfig.clear_cart) || event.key === "F9") {
+        if (!isInputFocused || isFKey) {
+          event.preventDefault();
+          if (lines.length) {
+            setLines([]);
+            toast.info("Carrinho esvaziado.");
+          }
+          codeRef.current?.focus();
+          return;
+        }
+      }
+
+      // Atalho: Abrir Consulta de Atalhos (F9 ou F10 padrão)
+      if (matchesKey(event, shortcutsConfig.open_shortcuts) || event.key === "F10") {
+        event.preventDefault();
+        setShortcutsModalOpen(true);
+        return;
+      }
+
+      // Esc: Fechar modais / limpar foco e voltar ao leitor
+      if (event.key === "Escape") {
+        setFreeOpen(false);
+        setScaleModalOpen(false);
+        setShortcutsModalOpen(false);
+        setWishlistOpen(false);
+        codeRef.current?.focus();
+        return;
+      }
+
+      // Atalhos de Seleção de Pagamento: 1, 2, 3, 4 ou Alt+1..4
+      if (
+        event.altKey &&
+        ["1", "2", "3", "4"].includes(event.key)
+      ) {
+        event.preventDefault();
+        const map: Record<string, string> = {
+          "1": "pix",
+          "2": "dinheiro",
+          "3": "credito",
+          "4": "debito",
+        };
+        const selected = map[event.key];
+        if (selected) {
+          setMethod(selected);
+          toast.info(`Pagamento: ${selected.toUpperCase()}`);
+        }
+        return;
+      }
+
+      // Teclas 1, 2, 3, 4 diretas (quando fora de inputs)
+      if (!isInputFocused && ["1", "2", "3", "4"].includes(event.key)) {
+        event.preventDefault();
+        const map: Record<string, string> = {
+          "1": "pix",
+          "2": "dinheiro",
+          "3": "credito",
+          "4": "debito",
+        };
+        const selected = map[event.key];
+        if (selected) {
+          setMethod(selected);
+          toast.info(`Pagamento: ${selected.toUpperCase()}`);
+        }
+        return;
+      }
+
+      // Atalhos de Seleção de Desconto (Moda): Alt+0, Alt+5, Alt+1, Alt+2, Alt+3
+      if (event.altKey && currentBranch === "moda") {
+        if (event.key === "0") {
+          event.preventDefault();
+          setDiscountPercent(0);
+          toast.info("Desconto: 0%");
+        } else if (event.key === "5") {
+          event.preventDefault();
+          setDiscountPercent(5);
+          toast.info("Desconto: 5% aplicado");
+        } else if (event.key === "1") {
+          event.preventDefault();
+          setDiscountPercent(10);
+          toast.info("Desconto: 10% aplicado");
+        } else if (event.key === "2") {
+          event.preventDefault();
+          setDiscountPercent(15);
+          toast.info("Desconto: 15% aplicado");
+        } else if (event.key === "3") {
+          event.preventDefault();
+          setDiscountPercent(20);
+          toast.info("Desconto: 20% aplicado");
+        }
+      }
+
+      // Tecla + ou - no campo de código vazio: altera quantidade do último item adicionado
+      if (isInputFocused && target === codeRef.current && !code.trim() && lines.length > 0) {
+        const lastItem = lines[lines.length - 1];
+        if (lastItem) {
+          if (event.key === "+" || event.key === "=") {
+            event.preventDefault();
+            changeQty(lastItem.key, 1);
+            return;
+          }
+          if (event.key === "-") {
+            event.preventDefault();
+            changeQty(lastItem.key, -1);
+            return;
+          }
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [shortcutsConfig, lines, total, busy, currentBranch, code]);
 
   async function checkout() {
     if (!profile) return;
     if (total <= 0) {
-      toast.error("Adicione itens ao carrinho.");
+      toast.error("Adicione itens ao carrinho para finalizar.");
+      codeRef.current?.focus();
       return;
     }
     if (method === "pix" && !profile.pix_key) {
-      toast.error("Cadastre sua chave Pix para gerar o QR Code.");
+      toast.error("Cadastre sua chave Pix em Configurações para gerar a cobrança.");
       return;
     }
 
@@ -348,7 +496,6 @@ function PdvPage() {
         price,
       }));
 
-      // Montar descrição com dados do ramo
       const parts: string[] = [];
       if (currentBranch === "restaurante" && tableNumber.trim()) {
         parts.push(`Mesa/Comanda: ${tableNumber.trim()}`);
@@ -435,7 +582,7 @@ function PdvPage() {
       setDiscountPercent(0);
       navigate({ to: "/pedidos/$id", params: { id: created.id } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível finalizar.");
+      toast.error(error instanceof Error ? error.message : "Não foi possível finalizar a venda.");
     } finally {
       setBusy(false);
     }
@@ -449,632 +596,548 @@ function PdvPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20 lg:pb-6">
-      {/* Header Principal — Sem link de redirecionamento na Logo para garantir o sistema */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          {/* Logo e Nome da Loja — Não navega para início do site */}
-          <div className="flex items-center gap-3 select-none cursor-default">
+    <div className="min-h-screen bg-background text-foreground pb-12">
+      {/* Header Minimalista: Identidade da loja e Link para Configurações */}
+      <header className="sticky top-0 z-30 border-b border-border/50 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
+          {/* Dados da Loja & Atalho para Configurações do Ramo */}
+          <div className="flex items-center gap-3">
             {profile?.store_logo_url ? (
               <img
                 src={profile.store_logo_url}
                 alt={profile.store_name}
-                className="size-9 rounded-xl border border-border object-cover bg-background"
+                className="size-8 rounded-lg border border-border/60 object-cover"
               />
             ) : (
-              <span className="grid size-9 place-items-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground shadow-sm">
-                {profile?.store_name?.slice(0, 1).toUpperCase() || "C"}
+              <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
+                {profile?.store_name?.slice(0, 1).toUpperCase() || "L"}
               </span>
             )}
-            <div className="flex flex-col">
-              <span className="font-display text-base font-semibold leading-tight sm:text-lg">
+
+            <div>
+              <span className="font-semibold text-sm leading-tight block">
                 {profile?.store_name ?? "PDV Rápido"}
               </span>
               <span className="text-[11px] text-muted-foreground">
-                Caixa aberto · {branchConfig.label}
+                Terminal de Vendas
               </span>
             </div>
 
-            {/* Seletor de Ramo do Negócio direto na tela */}
-            <Select
-              value={currentBranch}
-              onValueChange={(val) => handleBranchChange(val as BusinessBranch)}
-            >
-              <SelectTrigger className="h-8 w-auto gap-1.5 border-border/80 bg-secondary/50 px-2.5 text-xs font-medium hover:bg-secondary">
-                <span className="text-sm">{branchConfig.icon}</span>
-                <SelectValue placeholder="Ramo" />
-              </SelectTrigger>
-              <SelectContent align="start" className="w-56">
-                <div className="p-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Trocar Nicho do PDV
-                </div>
-                {Object.values(BUSINESS_BRANCHES).map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id} className="text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{branch.icon}</span>
-                      <span className="font-medium">{branch.label}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Ramo com indicação clara para ir às Configurações (não é aba no PDV) */}
+            <div className="ml-2 pl-3 border-l border-border/50">
+              <Link
+                to="/configuracoes"
+                className="group inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-secondary/30 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:border-border transition-colors"
+                title="Para trocar o ramo de atuação, acesse as Configurações da loja"
+              >
+                <span>{branchConfig.icon}</span>
+                <span className="font-medium text-foreground">{branchConfig.label}</span>
+                <span className="text-[10px] text-muted-foreground group-hover:text-primary">
+                  · Alterar em Configurações
+                </span>
+                <Settings className="size-3 text-muted-foreground group-hover:text-foreground" />
+              </Link>
+            </div>
           </div>
 
-          {/* Ações do Header */}
-          <div className="flex items-center gap-2">
-            {/* Botão de Central de Desejos */}
+          {/* Ações Rápidas do Header */}
+          <div className="flex items-center gap-1.5">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => setWishlistOpen(true)}
-              className="gap-1.5 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 text-xs h-8"
+              className="text-xs h-7 gap-1 text-muted-foreground hover:text-foreground"
             >
-              <Lightbulb className="size-3.5" />
-              <span className="hidden sm:inline">Desejar layout/função</span>
-              <span className="sm:hidden">Desejar</span>
+              <Lightbulb className="size-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Desejos</span>
             </Button>
 
-            <Button variant="ghost" size="sm" asChild className="hidden sm:flex h-8 text-xs">
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              className="text-xs h-7 gap-1 text-muted-foreground hover:text-foreground"
+            >
               <Link to="/produtos">
-                <Package className="size-3.5" /> Produtos
+                <Package className="size-3.5" />
+                <span className="hidden sm:inline">Produtos</span>
               </Link>
             </Button>
 
-            {isGuest ? (
-              <Button size="sm" onClick={signInWithGoogle} className="text-xs h-8">
-                <UserPlus className="size-3.5" /> Salvar no Google
-              </Button>
-            ) : (
-              <Button variant="secondary" size="sm" asChild className="text-xs h-8">
-                <Link to="/pedidos">Meus pedidos</Link>
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Banner do Ramo com Tagline */}
-        <div className="border-t border-border/60 bg-secondary/30 px-4 py-1.5">
-          <div className="mx-auto flex max-w-7xl items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className={`text-[10px] ${branchConfig.badgeColor}`}>
-                Modo {branchConfig.label.split(" ")[0]}
-              </Badge>
-              <span className="hidden md:inline">{branchConfig.tagline}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShortcutsModalOpen(true)}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Keyboard className="size-3 text-primary" />
-                <span className="hidden sm:inline">Atalhos:</span>
-                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
-                  {shortcutsConfig.focus_barcode} Bipar
-                </kbd>
-                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
-                  {shortcutsConfig.open_free_item} Avulso
-                </kbd>
-                <kbd className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[10px]">
-                  {shortcutsConfig.checkout} Finalizar
-                </kbd>
-              </button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShortcutsModalOpen(true)}
+              className="text-xs h-7 gap-1 px-2 border-border/60"
+            >
+              <Keyboard className="size-3 text-primary" />
+              <span className="font-mono text-[10px] text-muted-foreground">F10</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Conteúdo Principal */}
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-5 lg:grid-cols-[1fr_400px]">
-        <section className="space-y-4">
-          {/* Barra de Código de Barras + Botão de Item Avulso + Pesagem */}
-          <div className="flex flex-wrap items-center gap-2">
-            <form onSubmit={submitCode} className="panel flex flex-1 items-center gap-2 p-2.5 min-w-[260px]">
-              <Barcode className="size-5 shrink-0 text-primary" />
-              <Input
-                ref={codeRef}
-                autoFocus
-                className="h-10 flex-1 text-base border-0 focus-visible:ring-0 bg-transparent px-2"
-                inputMode="numeric"
-                placeholder={
-                  currentBranch === "mercado"
-                    ? `Passe o leitor ou digite o código (${shortcutsConfig.focus_barcode})`
-                    : `Código de barras (${shortcutsConfig.focus_barcode})`
-                }
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-              <Button type="submit" size="sm" className="h-9 px-3.5">
-                Bipar
-              </Button>
-            </form>
+      {/* Corpo Principal do PDV */}
+      <main className="mx-auto max-w-7xl px-4 pt-4">
+        <div className="grid gap-5 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_390px]">
+          {/* Coluna Esquerda: Terminal de Inserção Contínua & Tabela de Itens */}
+          <section className="space-y-4">
+            {/* Barra Principal de Inserção Contínua (Sem seleção de produtos) */}
+            <div className="rounded-xl border border-border/60 bg-card/40 p-3.5 backdrop-blur-sm shadow-xs">
+              <form onSubmit={submitCode} className="space-y-2.5">
+                <div className="relative flex items-center">
+                  <Barcode className="absolute left-3 size-5 text-muted-foreground" />
+                  <Input
+                    ref={codeRef}
+                    className="h-12 pl-11 pr-24 text-sm sm:text-base font-mono bg-background/80 border-border/70 focus-visible:ring-1 focus-visible:ring-primary"
+                    placeholder="Bipe o código de barras ou digite o código/nome e tecle Enter..."
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <div className="absolute right-2 flex items-center gap-1">
+                    <kbd className="hidden sm:inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                      {shortcutsConfig.focus_barcode || "F1"}
+                    </kbd>
+                    <Button type="submit" size="sm" className="h-8 px-2.5 text-xs">
+                      Inserir
+                    </Button>
+                  </div>
+                </div>
 
-            {/* Botão de Incluir Item Avulso sem cadastro (limpo, com atalho) */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setQuickItemOpen(true)}
-              className="h-[52px] gap-1.5 border-border bg-secondary/40 hover:bg-secondary text-xs px-3.5"
-            >
-              <PlusCircle className="size-4 text-primary" />
-              <div className="flex flex-col items-start leading-none">
-                <span className="font-semibold text-foreground">Item Avulso</span>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {shortcutsConfig.open_free_item}
-                </span>
-              </div>
-            </Button>
+                {/* Linha de Funções Rápidas por Teclado */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={freeOpen ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setFreeOpen(!freeOpen);
+                        if (!freeOpen) setTimeout(() => freeNameRef.current?.focus(), 60);
+                      }}
+                      className="h-7 text-xs gap-1.5 border-border/60"
+                    >
+                      <Plus className="size-3.5" />
+                      <span>Item Avulso</span>
+                      <kbd className="rounded bg-muted/60 px-1 text-[10px] font-mono">
+                        {shortcutsConfig.open_free_item || "F2"}
+                      </kbd>
+                    </Button>
 
-            {/* Recurso Rápido do Ramo Mercado: Balança / Pesagem */}
-            {currentBranch === "mercado" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setScaleModalOpen(true)}
-                className="h-[52px] gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-xs px-3.5"
-              >
-                <Scale className="size-4" />
-                <div className="flex flex-col items-start leading-none">
-                  <span className="font-semibold">Pesar por Kg</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">
-                    {shortcutsConfig.open_weigh}
+                    {currentBranch === "mercado" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setScaleModalOpen(true)}
+                        className="h-7 text-xs gap-1.5 border-border/60"
+                      >
+                        <Scale className="size-3.5 text-emerald-400" />
+                        <span>Pesar por Kg</span>
+                        <kbd className="rounded bg-muted/60 px-1 text-[10px] font-mono">
+                          {shortcutsConfig.open_weigh || "F3"}
+                        </kbd>
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <span className="text-[11px] text-muted-foreground/80 hidden md:inline">
+                    Multiplicador: digite <code className="font-mono text-foreground">3*código</code> ou <code className="font-mono text-foreground">2*15.00</code>
                   </span>
                 </div>
-              </Button>
-            ) : null}
-          </div>
+              </form>
 
-          {/* Barra de Busca por Nome */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9 h-10"
-              placeholder={`Buscar produto pelo nome ou código...`}
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
-          </div>
-
-          {/* Chips de Categorias Dinâmicas */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory("todas")}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                selectedCategory === "todas"
-                  ? "bg-primary text-primary-foreground font-semibold"
-                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              Todas as categorias
-            </button>
-
-            {/* Categorias rápidas do Ramo */}
-            {branchConfig.quickCategories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.label)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  selectedCategory === cat.label
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <span>{cat.icon}</span>
-                <span>{cat.label}</span>
-              </button>
-            ))}
-
-            {/* Categorias adicionais cadastradas nos produtos */}
-            {allCategories.map((cat) => {
-              const alreadyInQuick = branchConfig.quickCategories.some(
-                (q) => q.label.toLowerCase() === cat.toLowerCase(),
-              );
-              if (alreadyInQuick) return null;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    selectedCategory === cat
-                      ? "bg-primary text-primary-foreground font-semibold"
-                      : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
+              {/* Inserção de Item Avulso Inline (sem sair do teclado) */}
+              {freeOpen ? (
+                <form
+                  onSubmit={handleAddFreeItem}
+                  className="mt-3 rounded-lg border border-primary/20 bg-secondary/30 p-3 space-y-2.5"
                 >
-                  <span>{getCategoryEmoji(cat)}</span>
-                  <span>{cat}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Grade de Produtos com Shimmer Loading */}
-          {productsLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <div key={idx} className="panel flex h-36 flex-col justify-between p-4">
-                  <div className="space-y-2">
-                    <div className="skeleton h-4 w-3/4" />
-                    <div className="skeleton h-3 w-1/2" />
+                  <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                    <span className="flex items-center gap-1.5">
+                      <Tag className="size-3.5" /> Inserção Rápida de Item Avulso
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFreeOpen(false)}
+                      className="text-muted-foreground hover:text-foreground text-xs"
+                    >
+                      <X className="size-3.5" />
+                    </button>
                   </div>
-                  <div className="skeleton h-6 w-20" />
-                </div>
-              ))}
+
+                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_auto]">
+                    <Input
+                      ref={freeNameRef}
+                      className="h-8 text-xs bg-background"
+                      placeholder="Descrição do item ou serviço"
+                      value={freeName}
+                      onChange={(e) => setFreeName(e.target.value)}
+                    />
+                    <Input
+                      className="h-8 text-xs font-mono bg-background"
+                      inputMode="decimal"
+                      placeholder="Valor (R$)"
+                      value={freePrice}
+                      onChange={(e) => setFreePrice(e.target.value)}
+                    />
+                    <Input
+                      className="h-8 text-xs bg-background"
+                      placeholder="Observação (opcional)"
+                      value={freeNote}
+                      onChange={(e) => setFreeNote(e.target.value)}
+                    />
+                    <Button type="submit" size="sm" className="h-8 text-xs">
+                      Lançar
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
             </div>
-          ) : visible.length ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {visible.map((product) => {
-                const inCartQty = lines
-                  .filter((l) => l.name === product.name && l.price === Number(product.price))
-                  .reduce((sum, l) => sum + l.qty, 0);
 
-                return (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => addLine(product.name, Number(product.price))}
-                    className="panel group relative flex h-full min-h-32 flex-col justify-between gap-2 p-3.5 text-left transition-all hover:border-primary/60 hover:bg-secondary/60 active:scale-[0.98]"
-                  >
-                    {/* Badge de quantidade no carrinho */}
-                    {inCartQty > 0 ? (
-                      <span className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full bg-primary font-display text-xs font-bold text-primary-foreground shadow-md ring-2 ring-background">
-                        {inCartQty}
-                      </span>
-                    ) : null}
-
-                    <div>
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-base">{getCategoryEmoji(product.category)}</span>
-                        <span className="text-[10px] text-muted-foreground font-medium">
-                          {product.unit ? product.unit.toUpperCase() : "UN"}
-                        </span>
-                      </div>
-                      <span className="mt-1 line-clamp-2 font-medium leading-snug text-sm">
-                        {product.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-end justify-between pt-1">
-                      <span className="font-display text-base font-bold text-primary sm:text-lg">
-                        {formatBRL(Number(product.price))}
-                      </span>
-                      {product.barcode ? (
-                        <span className="font-mono text-[10px] text-muted-foreground/70">
-                          #{product.barcode.slice(-4)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="panel p-8 text-center text-sm text-muted-foreground">
-              <Store className="mx-auto size-8 text-muted-foreground/50" />
-              <p className="mt-2 font-medium">Nenhum produto cadastrado nesta categoria.</p>
-              <p className="text-xs text-muted-foreground">
-                Cadastre itens com leitor de código de barras ou use o botão "+ Item Avulso ({shortcutsConfig.open_free_item})".
-              </p>
-              <div className="mt-3 flex justify-center gap-2">
-                <Button size="sm" variant="outline" asChild className="text-xs">
-                  <Link to="/produtos">Cadastrar Produtos</Link>
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setQuickItemOpen(true)} className="text-xs">
-                  <Plus className="size-3.5 mr-1" /> Lançar Avulso
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Recursos Específicos por Ramo: Mesa (Restaurante), Técnico (Serviços), Desconto (Moda) */}
-          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Campos Específicos por Ramo (Minimalistas) */}
             {currentBranch === "restaurante" ? (
-              <div className="panel space-y-2 p-3.5 border-amber-500/30 bg-amber-500/5 sm:col-span-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
-                  <ChefHat className="size-4" />
-                  <span>Restaurante: Identificação do Pedido</span>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-center gap-3">
+                <ChefHat className="size-4 text-amber-400 shrink-0" />
+                <div className="flex-1 flex items-center gap-2">
+                  <Label className="text-xs shrink-0 font-medium text-amber-300">Mesa / Comanda:</Label>
+                  <Input
+                    placeholder="Ex: Mesa 04 ou Comanda 12"
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    className="h-8 text-xs max-w-xs bg-background/60"
+                  />
                 </div>
-                <Input
-                  placeholder="Número da Mesa ou Comanda (Ex: Mesa 04)"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                  className="h-9 text-xs"
-                />
               </div>
             ) : null}
 
             {currentBranch === "servicos" ? (
-              <div className="panel space-y-2 p-3.5 border-blue-500/30 bg-blue-500/5 sm:col-span-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-blue-300">
-                  <Wrench className="size-4" />
-                  <span>Serviços: Atendente / Técnico</span>
-                </div>
-                <Input
-                  placeholder="Nome do Técnico ou Mecânico responsável"
-                  value={technicianName}
-                  onChange={(e) => setTechnicianName(e.target.value)}
-                  className="h-9 text-xs"
-                />
-              </div>
-            ) : null}
-
-            {currentBranch === "moda" ? (
-              <div className="panel space-y-2 p-3.5 border-pink-500/30 bg-pink-500/5 sm:col-span-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-pink-300">
-                  <Percent className="size-4" />
-                  <span>Moda / Varejo: Desconto Balcão</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {[0, 5, 10, 15, 20].map((pct) => (
-                    <Button
-                      key={pct}
-                      type="button"
-                      size="sm"
-                      variant={discountPercent === pct ? "default" : "outline"}
-                      onClick={() => setDiscountPercent(pct)}
-                      className="h-8 text-xs font-semibold"
-                    >
-                      {pct === 0 ? "Sem desconto" : `${pct}% OFF`}
-                    </Button>
-                  ))}
-                  {discountPercent > 0 ? (
-                    <span className="text-xs text-pink-300">
-                      Economia de {formatBRL(discountValue)} no total
-                    </span>
-                  ) : null}
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 flex items-center gap-3">
+                <Wrench className="size-4 text-blue-400 shrink-0" />
+                <div className="flex-1 flex items-center gap-2">
+                  <Label className="text-xs shrink-0 font-medium text-blue-300">Técnico / Atendente:</Label>
+                  <Input
+                    placeholder="Ex: Carlos Mecânica / Maria Manicure"
+                    value={technicianName}
+                    onChange={(e) => setTechnicianName(e.target.value)}
+                    className="h-8 text-xs max-w-xs bg-background/60"
+                  />
                 </div>
               </div>
             ) : null}
-          </div>
 
-          {/* Configuração da loja (Visitante) com Upload de Logo e Ramo */}
-          {isGuest ? (
-            <PixSetupPanel
-              settings={settings}
-              onSave={(values) => {
-                const saved = saveLocalSettings(values);
-                setSettings(saved);
-                if (values.business_branch) setCurrentBranch(values.business_branch);
-              }}
-            />
-          ) : null}
-        </section>
+            {/* Tabela Minimalista de Itens do Cupom */}
+            <div className="rounded-xl border border-border/60 bg-card/40 backdrop-blur-sm overflow-hidden">
+              <div className="flex items-center justify-between border-b border-border/50 px-4 py-2.5 text-xs text-muted-foreground">
+                <span className="font-semibold uppercase tracking-wider text-foreground">
+                  Itens Lançados ({qtyCount})
+                </span>
+                <span className="text-[11px]">
+                  Use <code className="font-mono text-foreground">+</code> / <code className="font-mono text-foreground">-</code> para ajustar quantidade
+                </span>
+              </div>
 
-        {/* Carrinho Lateral */}
-        <aside ref={cartRef} className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <div className="panel p-5">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="size-5 text-primary" />
-              <h2 className="font-display text-lg font-semibold">Carrinho</h2>
-              <Badge variant="outline" className="ml-auto">
-                {qtyCount} {qtyCount === 1 ? "item" : "itens"}
-              </Badge>
-            </div>
-
-            <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
               {lines.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  <p>Carrinho vazio.</p>
-                  <p className="text-xs">Bipe um código ({shortcutsConfig.focus_barcode}) ou lance item avulso ({shortcutsConfig.open_free_item}).</p>
+                <div className="py-16 text-center space-y-2">
+                  <Barcode className="mx-auto size-10 text-muted-foreground/30" />
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Nenhum produto inserido no caixa.
+                  </p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Bipe com o leitor ou tecle <kbd className="font-mono text-foreground">{shortcutsConfig.focus_barcode || "F1"}</kbd> para focar no campo.
+                  </p>
                 </div>
               ) : (
-                lines.map((line) => (
-                  <div key={line.key} className="flex items-center gap-2 rounded-xl bg-secondary/50 p-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{line.name}</p>
-                      {line.note ? (
-                        <p className="text-[11px] text-amber-300">Obs: {line.note}</p>
-                      ) : null}
-                      <p className="text-xs text-muted-foreground">
-                        {line.qty} × {formatBRL(line.price)}
-                      </p>
-                    </div>
-                    <Button size="icon" variant="ghost" className="size-8" onClick={() => changeQty(line.key, -1)}>
-                      <Minus className="size-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="size-8" onClick={() => changeQty(line.key, 1)}>
-                      <Plus className="size-3.5" />
-                    </Button>
-                    <span className="w-20 text-right text-sm font-semibold">
-                      {formatBRL(line.qty * line.price)}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => setLines(lines.filter((l) => l.key !== line.key))}
+                <div className="divide-y divide-border/40 max-h-[480px] overflow-y-auto">
+                  {lines.map((line, index) => (
+                    <div
+                      key={line.key}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-secondary/20 transition-colors"
                     >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                ))
+                      <span className="text-xs font-mono text-muted-foreground w-6 text-center">
+                        {index + 1}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs sm:text-sm font-medium leading-tight truncate">
+                          {line.name}
+                        </p>
+                        {line.note ? (
+                          <p className="text-[11px] text-amber-400 mt-0.5">Obs: {line.note}</p>
+                        ) : null}
+                        <p className="text-[11px] font-mono text-muted-foreground">
+                          {line.qty} × {formatBRL(line.price)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => changeQty(line.key, -1)}
+                          title="Diminuir quantidade"
+                        >
+                          <Minus className="size-3.5" />
+                        </Button>
+                        <span className="font-mono text-xs font-semibold w-6 text-center">
+                          {line.qty}
+                        </span>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => changeQty(line.key, 1)}
+                          title="Aumentar quantidade"
+                        >
+                          <Plus className="size-3.5" />
+                        </Button>
+                      </div>
+
+                      <span className="w-24 text-right font-mono text-xs sm:text-sm font-bold">
+                        {formatBRL(line.qty * line.price)}
+                      </span>
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeLine(line.key)}
+                        title="Remover item"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
-            <div className="mt-4 space-y-3 border-t border-border pt-4">
-              {discountPercent > 0 ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>{formatBRL(subtotal)}</span>
+            {/* Configurações Locais de Visitante (Discreta, sem poluição) */}
+            {isGuest ? (
+              <PixSetupPanel
+                settings={settings}
+                onSave={(values) => {
+                  const saved = saveLocalSettings(values);
+                  setSettings(saved);
+                }}
+              />
+            ) : null}
+          </section>
+
+          {/* Coluna Direita: Resumo Financeiro & Fechamento Minimalista */}
+          <aside className="space-y-4 lg:sticky lg:top-16 lg:self-start">
+            <div className="rounded-xl border border-border/60 bg-card/40 p-4 backdrop-blur-sm space-y-4">
+              {/* Display do Total da Venda */}
+              <div className="rounded-lg border border-border/50 bg-secondary/30 p-3.5 space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Total a Pagar</span>
+                  <Badge variant="outline" className="text-[10px] font-mono">
+                    {qtyCount} {qtyCount === 1 ? "item" : "itens"}
+                  </Badge>
+                </div>
+
+                <div className="font-mono text-3xl font-bold tracking-tight text-primary">
+                  {formatBRL(total)}
+                </div>
+
+                {discountPercent > 0 ? (
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-border/40 text-muted-foreground">
+                    <span>Subtotal: {formatBRL(subtotal)}</span>
+                    <span className="text-pink-400">-{discountPercent}% ({formatBRL(discountValue)})</span>
                   </div>
-                  <div className="flex justify-between text-pink-400">
-                    <span>Desconto ({discountPercent}%)</span>
-                    <span>- {formatBRL(discountValue)}</span>
+                ) : null}
+              </div>
+
+              {/* Seletor de Desconto (Moda / Varejo com atalhos de teclado) */}
+              {currentBranch === "moda" ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="flex items-center gap-1 text-pink-400">
+                      <Percent className="size-3.5" /> Desconto Balcão
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1">
+                    {DISCOUNT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.pct}
+                        type="button"
+                        onClick={() => setDiscountPercent(opt.pct)}
+                        className={`flex flex-col items-center justify-center rounded-md border py-1.5 text-xs font-medium transition-colors ${
+                          discountPercent === opt.pct
+                            ? "border-primary bg-primary text-primary-foreground font-bold shadow-xs"
+                            : "border-border/50 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[9px] opacity-70 font-mono">{opt.hotkey}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               ) : null}
 
-              <div className="flex items-end justify-between">
-                <span className="text-sm text-muted-foreground">Total da Venda</span>
-                <span className="font-display text-3xl font-bold text-primary">{formatBRL(total)}</span>
+              {/* Seletor de Forma de Pagamento com Teclas de Atalho [1] [2] [3] [4] */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                  <span>Forma de Pagamento</span>
+                  <span className="text-[10px] font-mono">Teclas [1] a [4]</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PAYMENT_OPTIONS.map((opt) => {
+                    const Icon = opt.icon;
+                    const isSelected = method === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setMethod(opt.id)}
+                        className={`flex items-center justify-between rounded-lg border px-2.5 py-2 text-xs font-medium transition-all ${
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary font-semibold ring-1 ring-primary/40 shadow-xs"
+                            : "border-border/50 bg-secondary/20 text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Icon className="size-3.5 shrink-0" />
+                          <span className="truncate">{opt.label}</span>
+                        </div>
+                        <kbd className="rounded border border-border/60 bg-muted/80 px-1 py-0.2 text-[10px] font-mono">
+                          {opt.hotkey}
+                        </kbd>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <Input
-                placeholder="Nome do cliente (opcional)"
-                value={customer}
-                onChange={(e) => setCustomer(e.target.value)}
-              />
+              {/* Identificação Opcional do Cliente */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Cliente (opcional)</Label>
+                <Input
+                  className="h-8 text-xs bg-background/60"
+                  placeholder="Nome do cliente no comprovante"
+                  value={customer}
+                  onChange={(e) => setCustomer(e.target.value)}
+                />
+              </div>
 
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Button
-                className="w-full font-semibold shadow-glow"
-                size="lg"
-                disabled={busy || !lines.length}
-                onClick={checkout}
-              >
-                {busy ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    Gerando cobrança...
-                  </>
-                ) : (
-                  <>Finalizar venda ({shortcutsConfig.checkout})</>
-                )}
-              </Button>
-
-              {lines.length ? (
+              {/* Botões de Ação Final */}
+              <div className="space-y-2 pt-2 border-t border-border/50">
                 <Button
-                  className="w-full text-xs text-muted-foreground"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setLines([])}
+                  className="w-full h-11 text-sm font-semibold tracking-wide justify-between"
+                  disabled={busy || !lines.length}
+                  onClick={checkout}
                 >
-                  Limpar carrinho ({shortcutsConfig.clear_cart})
+                  {busy ? (
+                    <span className="flex items-center gap-2 mx-auto">
+                      <Loader2 className="size-4 animate-spin" /> Gerando cobrança...
+                    </span>
+                  ) : (
+                    <>
+                      <span>Finalizar Venda</span>
+                      <kbd className="rounded bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[11px]">
+                        {shortcutsConfig.checkout || "F4 / F8"}
+                      </kbd>
+                    </>
+                  )}
                 </Button>
-              ) : null}
-            </div>
-          </div>
 
-          {result && profile ? (
-            <GuestResult order={result} profile={profile} onClose={() => setResult(null)} onSignIn={signInWithGoogle} />
-          ) : null}
-        </aside>
+                {lines.length ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-8 text-xs text-muted-foreground hover:text-destructive justify-between"
+                    onClick={() => {
+                      setLines([]);
+                      toast.info("Carrinho esvaziado.");
+                      codeRef.current?.focus();
+                    }}
+                  >
+                    <span>Limpar Carrinho</span>
+                    <kbd className="font-mono text-[10px]">
+                      {shortcutsConfig.clear_cart || "F9"}
+                    </kbd>
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Resultado de Cobrança Pix para Visitante */}
+            {result && profile ? (
+              <GuestResult
+                order={result}
+                profile={profile}
+                onClose={() => {
+                  setResult(null);
+                  codeRef.current?.focus();
+                }}
+                onSignIn={signInWithGoogle}
+              />
+            ) : null}
+          </aside>
+        </div>
       </main>
 
-      {/* Barra Mobile Flutuante para Checkout Rápido */}
-      {lines.length > 0 ? (
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 p-3 backdrop-blur lg:hidden">
-          <div className="mx-auto flex max-w-md items-center justify-between gap-3">
-            <div>
-              <p className="text-xs text-muted-foreground">{qtyCount} {qtyCount === 1 ? "item" : "itens"}</p>
-              <p className="font-display text-xl font-bold text-primary">{formatBRL(total)}</p>
-            </div>
-            <Button
-              size="lg"
-              className="flex-1 font-semibold"
-              disabled={busy}
-              onClick={() => {
-                cartRef.current?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              Ver Carrinho & Pagar
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Ícone Flutuante Discreto no Canto Inferior Direito para Consultar Atalhos */}
-      <button
-        type="button"
-        onClick={() => setShortcutsModalOpen(true)}
-        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 rounded-full border border-border/80 bg-secondary/85 px-3 py-1.5 text-xs text-muted-foreground shadow-panel backdrop-blur transition-all hover:bg-secondary hover:text-foreground hover:scale-105"
-        title="Ver atalhos de teclado do PDV"
-      >
-        <Keyboard className="size-3.5 text-primary" />
-        <span className="font-medium text-[11px]">Atalhos ({shortcutsConfig.open_shortcuts})</span>
-      </button>
-
-      {/* Modal de Item Avulso (Substituiu a caixa de inserção rápida) */}
-      <QuickItemModal
-        open={quickItemOpen}
-        onOpenChange={setQuickItemOpen}
-        onAddItem={(name, price, note) => addLine(name, price, note)}
-      />
-
-      {/* Modal de Pesagem (Mercado) */}
+      {/* Modal de Balança / Pesagem (Mercado) */}
       <Dialog open={scaleModalOpen} onOpenChange={setScaleModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm p-5">
           <DialogHeader>
-            <div className="flex items-center gap-2">
-              <span className="grid size-8 place-items-center rounded-lg bg-emerald-500/20 text-emerald-300">
-                <Scale className="size-4" />
-              </span>
-              <DialogTitle>Pesagem por Quilo (Balança)</DialogTitle>
-            </div>
-            <DialogDescription>
-              Informe o peso em gramas e o preço do quilo para calcular o valor na hora.
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Scale className="size-4 text-emerald-400" /> Pesar Item por Kg
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Informe o valor do kg e o peso em gramas aferido na balança
             </DialogDescription>
           </DialogHeader>
-
-          <form onSubmit={handleAddWeighedItem} className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <Label>Nome do item (ex: Banana Prata, Maçã, Queijo Prato)</Label>
+          <form onSubmit={handleAddWeighedItem} className="space-y-3 pt-1">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Nome do produto</Label>
               <Input
-                placeholder="Ex: Banana Prata"
+                placeholder="Ex: Tomate / Queijo Prato"
                 value={scaleItemName}
                 onChange={(e) => setScaleItemName(e.target.value)}
+                className="h-8 text-xs"
                 autoFocus
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Preço por Kg (R$)</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Preço / Kg (R$)</Label>
                 <Input
-                  inputMode="decimal"
                   placeholder="Ex: 8,90"
                   value={scalePriceKg}
                   onChange={(e) => setScalePriceKg(e.target.value)}
+                  className="h-8 text-xs font-mono"
+                  inputMode="decimal"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label>Peso em Gramas (g)</Label>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Peso (gramas)</Label>
                 <Input
-                  inputMode="numeric"
                   placeholder="Ex: 450"
                   value={scaleGrams}
                   onChange={(e) => setScaleGrams(e.target.value)}
+                  className="h-8 text-xs font-mono"
+                  inputMode="numeric"
                 />
               </div>
             </div>
 
-            {scalePriceKg && scaleGrams ? (
-              <div className="rounded-xl bg-secondary/50 p-3 text-center">
-                <span className="text-xs text-muted-foreground">Valor calculado:</span>
-                <p className="font-display text-2xl font-bold text-emerald-400">
-                  {formatBRL(
-                    (parseAmount(scalePriceKg) *
-                      parseFloat(scaleGrams.replace(",", ".") || "0")) /
-                      1000,
-                  )}
-                </p>
+            {parseAmount(scalePriceKg) > 0 && parseFloat(scaleGrams) > 0 ? (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-center text-xs font-mono text-emerald-400 font-bold">
+                Total calculado: {formatBRL(Math.round(parseAmount(scalePriceKg) * (parseFloat(scaleGrams) / 1000) * 100) / 100)}
               </div>
             ) : null}
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setScaleModalOpen(false)}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setScaleModalOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit">Adicionar ao Carrinho</Button>
+              <Button type="submit" size="sm">
+                Adicionar [Enter]
+              </Button>
             </div>
           </form>
         </DialogContent>
@@ -1087,7 +1150,7 @@ function PdvPage() {
         onConfigChange={() => setShortcutsConfig(loadShortcutsConfig())}
       />
 
-      {/* Central de Desejos de Layout & Funções por Ramo */}
+      {/* Central de Desejos de Layout & Funções */}
       <BranchWishlistModal
         open={wishlistOpen}
         onOpenChange={setWishlistOpen}
@@ -1105,97 +1168,57 @@ function PixSetupPanel({
   onSave: (values: Partial<LocalSettings>) => void;
 }) {
   const [form, setForm] = useState(settings);
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="panel space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-base font-semibold">Dados da Loja & Nicho (neste aparelho)</h2>
-        <Badge variant="outline" className="text-[11px]">Personalização</Badge>
-      </div>
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="rounded-xl border border-border/50 bg-card/30 p-3 text-xs"
+    >
+      <summary className="flex cursor-pointer select-none items-center justify-between font-medium text-muted-foreground hover:text-foreground">
+        <span className="flex items-center gap-2">
+          <Settings className="size-3.5" />
+          Dados da loja neste navegador (Visitante)
+        </span>
+        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+      </summary>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 pt-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label>Nome da loja</Label>
+          <Label className="text-[11px]">Nome da loja</Label>
           <Input
+            className="h-8 text-xs"
             value={form.store_name}
             onChange={(e) => setForm({ ...form, store_name: e.target.value })}
           />
         </div>
 
         <div className="space-y-1">
-          <Label>Ramo padrão do negócio</Label>
-          <Select
-            value={form.business_branch ?? "mercado"}
-            onValueChange={(value) =>
-              setForm({ ...form, business_branch: value as BusinessBranch })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.values(BUSINESS_BRANCHES).map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.icon} {b.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Upload de Logo via arquivo */}
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label>Logo da Loja (enviar arquivo de imagem)</Label>
-          <LogoUploader
-            value={form.store_logo_url}
-            onChange={(logoUrl) => setForm({ ...form, store_logo_url: logoUrl })}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label>Cidade</Label>
-          <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-        </div>
-
-        <div className="space-y-1">
-          <Label>Chave Pix</Label>
+          <Label className="text-[11px]">Chave Pix</Label>
           <Input
+            className="h-8 text-xs font-mono"
             value={form.pix_key ?? ""}
             onChange={(e) => setForm({ ...form, pix_key: e.target.value })}
-            placeholder="CPF, telefone, e-mail ou aleatória"
+            placeholder="Chave para receber pagamentos"
           />
         </div>
 
-        <div className="space-y-1 sm:col-span-2">
-          <Label>Tipo da chave</Label>
-          <Select
-            value={form.pix_key_type}
-            onValueChange={(value) => setForm({ ...form, pix_key_type: value })}
+        <div className="sm:col-span-2 flex justify-end gap-2 pt-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-xs"
+            onClick={() => {
+              onSave(form);
+              toast.success("Dados locais atualizados!");
+            }}
           >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PIX_KEY_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            Salvar dados locais
+          </Button>
         </div>
       </div>
-
-      <Button
-        variant="secondary"
-        onClick={() => {
-          onSave(form);
-          toast.success("Configurações da loja e ramo atualizados!");
-        }}
-      >
-        Salvar dados da loja
-      </Button>
-    </div>
+    </details>
   );
 }
 
@@ -1218,61 +1241,66 @@ function GuestResult({
   }
 
   return (
-    <div className="panel space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold">
-          Venda nº {String(order.order_number).padStart(4, "0")}
+    <div className="rounded-xl border border-border/60 bg-card/50 p-4 space-y-3 backdrop-blur-sm">
+      <div className="flex items-center justify-between border-b border-border/40 pb-2">
+        <h2 className="font-semibold text-xs">
+          Venda nº {String(order.order_number).padStart(4, "0")} Gerada
         </h2>
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          Fechar
+        <Button size="icon" variant="ghost" className="size-6 text-muted-foreground" onClick={onClose}>
+          <X className="size-3.5" />
         </Button>
       </div>
 
       {order.pix_payload ? (
-        <div className="flex flex-col items-center gap-3">
-          <PixQr payload={order.pix_payload} className="size-48 rounded-xl bg-white p-3 shadow-md" />
+        <div className="flex flex-col items-center gap-2 py-1">
+          <PixQr payload={order.pix_payload} className="size-40 rounded-lg bg-white p-2.5 shadow-sm" />
           <Button
             size="sm"
-            variant="secondary"
+            variant="outline"
+            className="text-xs h-7 gap-1"
             onClick={() => {
               navigator.clipboard.writeText(order.pix_payload ?? "");
-              toast.success("Pix copia e cola copiado.");
+              toast.success("Pix copia e cola copiado!");
             }}
           >
-            <Copy className="size-4" /> Copiar Pix
+            <Copy className="size-3" /> Copiar Pix
           </Button>
         </div>
       ) : null}
 
-      <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-1.5 pt-1">
         <Button
+          size="sm"
           variant="secondary"
+          className="text-xs h-8 gap-1"
           onClick={() =>
             printReceipt({ order, profile, mode: "cobranca", layout: "a4", qrDataUrl: qr })
           }
         >
-          <Printer className="size-4" /> Imprimir A4
+          <Printer className="size-3" /> Imprimir A4
         </Button>
         <Button
+          size="sm"
           variant="secondary"
+          className="text-xs h-8 gap-1"
           onClick={() =>
             printReceipt({ order, profile, mode: "cobranca", layout: "cupom", qrDataUrl: qr })
           }
         >
-          <Printer className="size-4" /> Imprimir cupom 80mm
+          <Printer className="size-3" /> Cupom 80mm
         </Button>
-        <Button variant="secondary" onClick={() => saveImage("cobranca")}>
-          <ImageIcon className="size-4" /> Imagem da cobrança
+        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => saveImage("cobranca")}>
+          <ImageIcon className="size-3 mr-1" /> Imagem Cobrança
         </Button>
-        <Button variant="secondary" onClick={() => saveImage("recibo")}>
-          <ImageIcon className="size-4" /> Imagem do recibo (pago)
+        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => saveImage("recibo")}>
+          <ImageIcon className="size-3 mr-1" /> Imagem Recibo
         </Button>
       </div>
 
-      <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">
-        Esta venda não foi salva na nuvem. Crie sua conta para guardar o histórico e o caixa.
-        <Button className="mt-2 w-full" size="sm" onClick={onSignIn}>
-          <UserPlus className="size-4" /> Criar conta com Google
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-[11px] text-muted-foreground space-y-1.5">
+        <p>Venda salva localmente. Crie sua conta para sincronizar pedidos na nuvem.</p>
+        <Button className="w-full h-7 text-xs" size="sm" onClick={onSignIn}>
+          <UserPlus className="size-3 mr-1" /> Criar conta com Google
         </Button>
       </div>
     </div>
