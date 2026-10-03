@@ -1209,7 +1209,7 @@ function PdvPage() {
                     </div>
 
                     <span className="text-[11px] text-muted-foreground/80 hidden md:inline">
-                      Multiplicador: digite <code className="font-mono text-foreground">3*código</code> ou <code className="font-mono text-foreground">2*15.00</code>
+                      Multiplicador: digite <code className="font-mono text-foreground">3*código</code> ou <code className="font-mono text-foreground">+15</code> (valor avulso)
                     </span>
                   </div>
                 </form>
