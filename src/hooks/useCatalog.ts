@@ -11,6 +11,7 @@ import {
 } from "@/lib/local-store";
 import { useSession } from "@/hooks/useSession";
 import { useProfile } from "@/hooks/useStore";
+import { useMyStore } from "@/hooks/useStoreTeam";
 
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -41,6 +42,7 @@ export function useProducts() {
 export function useSaveProduct() {
   const queryClient = useQueryClient();
   const { user } = useSession();
+  const { data: store } = useMyStore();
 
   return useMutation({
     mutationFn: async (product: Partial<Product> & { name: string }) => {
@@ -64,7 +66,7 @@ export function useSaveProduct() {
       }
 
       const values = {
-        user_id: user.id,
+        user_id: store?.ownerId ?? user.id,
         name: product.name,
         barcode: product.barcode?.trim() || null,
         price: Number(product.price ?? 0),

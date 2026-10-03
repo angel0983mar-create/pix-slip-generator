@@ -16,6 +16,7 @@ import { Route as PdvRouteImport } from './routes/pdv'
 import { Route as ProdutosRouteImport } from './routes/produtos'
 import { Route as AuthenticatedCaixaRouteImport } from './routes/_authenticated/caixa'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
+import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as AuthenticatedPedidosIndexRouteImport } from './routes/_authenticated/pedidos.index'
 import { Route as AuthenticatedPedidosIdRouteImport } from './routes/_authenticated/pedidos.$id'
 
@@ -54,6 +55,11 @@ const AuthenticatedConfiguracoesRoute =
     path: '/configuracoes',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const ConviteTokenRoute = ConviteTokenRouteImport.update({
+  id: '/convite/$token',
+  path: '/convite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedPedidosIndexRoute =
   AuthenticatedPedidosIndexRouteImport.update({
     id: '/pedidos/',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/produtos': typeof ProdutosRoute
   '/caixa': typeof AuthenticatedCaixaRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/convite/$token': typeof ConviteTokenRoute
   '/pedidos/$id': typeof AuthenticatedPedidosIdRoute
   '/pedidos/': typeof AuthenticatedPedidosIndexRoute
 }
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/produtos': typeof ProdutosRoute
   '/caixa': typeof AuthenticatedCaixaRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/convite/$token': typeof ConviteTokenRoute
   '/pedidos/$id': typeof AuthenticatedPedidosIdRoute
   '/pedidos': typeof AuthenticatedPedidosIndexRoute
 }
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/produtos': typeof ProdutosRoute
   '/_authenticated/caixa': typeof AuthenticatedCaixaRoute
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/convite/$token': typeof ConviteTokenRoute
   '/_authenticated/pedidos/$id': typeof AuthenticatedPedidosIdRoute
   '/_authenticated/pedidos/': typeof AuthenticatedPedidosIndexRoute
 }
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/produtos'
     | '/caixa'
     | '/configuracoes'
+    | '/convite/$token'
     | '/pedidos/$id'
     | '/pedidos/'
   fileRoutesByTo: FileRoutesByTo
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/produtos'
     | '/caixa'
     | '/configuracoes'
+    | '/convite/$token'
     | '/pedidos/$id'
     | '/pedidos'
   id:
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/produtos'
     | '/_authenticated/caixa'
     | '/_authenticated/configuracoes'
+    | '/convite/$token'
     | '/_authenticated/pedidos/$id'
     | '/_authenticated/pedidos/'
   fileRoutesById: FileRoutesById
@@ -138,6 +150,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   PdvRoute: typeof PdvRoute
   ProdutosRoute: typeof ProdutosRoute
+  ConviteTokenRoute: typeof ConviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedConfiguracoesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/convite/$token': {
+      id: '/convite/$token'
+      path: '/convite/$token'
+      fullPath: '/convite/$token'
+      preLoaderRoute: typeof ConviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/pedidos/': {
       id: '/_authenticated/pedidos/'
       path: '/pedidos'
@@ -231,6 +251,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   PdvRoute: PdvRoute,
   ProdutosRoute: ProdutosRoute,
+  ConviteTokenRoute: ConviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

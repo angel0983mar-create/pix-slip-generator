@@ -10,6 +10,19 @@ export function useProfile() {
       const uid = auth.user?.id;
       if (!uid) return null;
 
+      // Funcionário: usa os dados da loja do patrão
+      const { data: store } = await supabase.rpc("my_store");
+      const ownerId = (store as { owner_id: string }[] | null)?.[0]?.owner_id;
+      if (ownerId) {
+        const { data: owner, error: ownerError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", ownerId)
+          .maybeSingle();
+        if (ownerError) throw ownerError;
+        if (owner) return owner as unknown as Profile;
+      }
+
       const { data, error } = await supabase
         .from("profiles")
         .select("*")

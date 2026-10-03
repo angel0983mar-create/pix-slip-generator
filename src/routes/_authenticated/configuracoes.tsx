@@ -26,6 +26,7 @@ import { PIX_KEY_TYPES } from "@/lib/pix";
 import type { PrintLayout, Profile } from "@/lib/domain";
 import { BUSINESS_BRANCHES, type BusinessBranch } from "@/lib/business-branches";
 import { LogoUploader } from "@/components/LogoUploader";
+import { TeamPanel } from "@/components/TeamPanel";
 import {
   loadLocalSettings,
   saveLocalSettings,
@@ -425,6 +426,8 @@ function SettingsPage() {
           </Button>
         </div>
       </form>
+
+      <TeamPanel />
     </div>
   );
 }

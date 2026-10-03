@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/hooks/useStore";
+import { useMyStore } from "@/hooks/useStoreTeam";
 
 const NAV = [
   { to: "/pdv", label: "PDV", icon: Barcode },
@@ -18,6 +19,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
+  const { data: store } = useMyStore();
+  const role = store?.role ?? "admin";
+  const nav = NAV.filter(({ to }) => {
+    if (role === "admin") return true;
+    if (to === "/caixa" || to === "/configuracoes") return false;
+    if (to === "/pdv") return role !== "estoque";
+    return true;
+  });
 
   async function handleSignOut() {
     await queryClient.cancelQueries();
@@ -40,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="flex flex-1 items-center gap-1">
-            {NAV.map(({ to, label, icon: Icon }) => (
+            {nav.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
