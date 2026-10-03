@@ -54,6 +54,9 @@ import { PixQr, usePixQr } from "@/components/PixQr";
 import { useSession } from "@/hooks/useSession";
 import { useProfile } from "@/hooks/useStore";
 import { useProducts } from "@/hooks/useCatalog";
+import { useMyStore } from "@/hooks/useStoreTeam";
+import { alertUser, isSoundEnabled, isVoiceEnabled, setSoundEnabled, setVoiceEnabled } from "@/lib/sounds";
+import { Switch } from "@/components/ui/switch";
 import { PAYMENT_METHODS, type Order, type OrderItem, type Profile } from "@/lib/domain";
 import { formatBRL, parseAmount } from "@/lib/format";
 import { buildPixPayload } from "@/lib/pix";
@@ -128,6 +131,10 @@ function PdvPage() {
   const isGuest = !sessionLoading && !user;
   const { data: remoteProfile } = useProfile();
   const { data: products = [] } = useProducts();
+  const { data: store } = useMyStore();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
+  const [voiceOn, setVoiceOn] = useState(() => isVoiceEnabled());
 
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
   const profile: Profile | null = isGuest ? localProfile(settings) : (remoteProfile ?? null);
@@ -309,6 +316,7 @@ function PdvPage() {
 
     if (byName) {
       addLine(byName.name, Number(byName.price), qtyToInsert, undefined, "produto");
+      alertUser("ok");
       toast.success(
         `${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}${byName.name} — ${formatBRL(Number(byName.price) * qtyToInsert)}`,
       );
@@ -317,20 +325,25 @@ function PdvPage() {
       return;
     }
 
-    // Se for valor digitado direto (ex: 15,50)
+    // Valor digitado direto SÓ com marcação explícita: "+15", "15,50" ou "R$15".
+    // Números puros (ex: 789123) são tratados como código de barras.
+    const explicitValue = /^(\+|r\$\s*)\s*\d+([.,]\d{1,2})?$/i.test(codeToSearch) ||
+      /^\d+[.,]\d{1,2}$/.test(codeToSearch);
     const directPrice = parseAmount(codeToSearch);
-    if (directPrice > 0 && /^\d+([.,]\d{1,2})?$/.test(codeToSearch)) {
+    if (explicitValue && directPrice > 0) {
       addLine("Item Avulso", directPrice, qtyToInsert, undefined, "produto");
-      toast.success(
-        `${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}Item Avulso — ${formatBRL(directPrice * qtyToInsert)}`,
+      alertUser("avulso", "Item avulso");
+      toast.warning(
+        `${qtyToInsert > 1 ? `${qtyToInsert}x ` : ""}Item avulso (sem cadastro) — ${formatBRL(directPrice * qtyToInsert)}`,
       );
       setCode("");
       codeRef.current?.focus();
       return;
     }
 
-    toast.error(`"${codeToSearch}" não encontrado.`, {
-      description: "Pressione F2 para lançar como avulso ou cadastre em Produtos.",
+    alertUser("alerta", "Produto não cadastrado");
+    toast.error(`Produto não cadastrado: "${codeToSearch}"`, {
+      description: `Para lançar como valor, digite +${codeToSearch} ou use ${shortcutsConfig.open_free_item || "F2"} (item avulso).`,
       action: {
         label: "Cadastrar",
         onClick: () => navigate({ to: "/produtos" }),
@@ -389,6 +402,7 @@ function PdvPage() {
       return;
     }
     addLine(name, price, 1, freeNote.trim() || undefined, "produto");
+    alertUser("avulso", "Item avulso");
     toast.success(`${name} adicionado — ${formatBRL(price)}`);
     setFreeName("");
     setFreePrice("");
@@ -686,7 +700,7 @@ function PdvPage() {
       const { data: created, error } = await supabase
         .from("orders")
         .insert({
-          user_id: user!.id,
+          user_id: store?.ownerId ?? user!.id,
           customer_name: finalCustomer,
           customer_contact: customerContact.trim() || null,
           description,
@@ -768,21 +782,6 @@ function PdvPage() {
               </span>
             </div>
 
-            {/* Ramo com indicação de alterar em Configurações */}
-            <div className="ml-2 pl-3 border-l border-border/50">
-              <Link
-                to="/configuracoes"
-                className="group inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-secondary/30 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:border-border transition-colors"
-                title="Para trocar o ramo de atuação, acesse as Configurações da loja"
-              >
-                <span>{branchConfig.icon}</span>
-                <span className="font-medium text-foreground">{branchConfig.label}</span>
-                <span className="text-[10px] text-muted-foreground group-hover:text-primary">
-                  · Alterar em Configurações
-                </span>
-                <Settings className="size-3 text-muted-foreground group-hover:text-foreground" />
-              </Link>
-            </div>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -809,13 +808,14 @@ function PdvPage() {
             </Button>
 
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShortcutsModalOpen(true)}
-              className="text-xs h-7 gap-1 px-2 border-border/60"
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className="size-8 text-muted-foreground hover:text-foreground"
+              title="Configurações do caixa"
+              aria-label="Configurações do caixa"
             >
-              <Keyboard className="size-3 text-primary" />
-              <span className="font-mono text-[10px] text-muted-foreground">F10</span>
+              <Settings className="size-4" />
             </Button>
           </div>
         </div>
@@ -1362,16 +1362,6 @@ function PdvPage() {
               )}
             </div>
 
-            {/* Configurações Locais de Visitante */}
-            {isGuest ? (
-              <PixSetupPanel
-                settings={settings}
-                onSave={(values) => {
-                  const saved = saveLocalSettings(values);
-                  setSettings(saved);
-                }}
-              />
-            ) : null}
           </section>
 
           {/* ============================================================ */}
@@ -1697,6 +1687,88 @@ function PdvPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configurações do caixa (abre pelo ícone no canto) */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-lg p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold">Configurações do caixa</DialogTitle>
+            <DialogDescription className="text-xs">
+              {branchConfig.icon} {branchConfig.label}
+              {store?.isEmployee ? " · modo funcionário" : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <label className="panel flex items-center justify-between gap-3 p-3">
+              <span>
+                <span className="block text-sm font-medium">Aviso sonoro</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Bipe ao passar produto, item avulso e produto não cadastrado
+                </span>
+              </span>
+              <Switch
+                checked={soundOn}
+                onCheckedChange={(v) => {
+                  setSoundEnabled(v);
+                  setSoundOn(v);
+                  if (v) alertUser("ok");
+                }}
+              />
+            </label>
+            <label className="panel flex items-center justify-between gap-3 p-3">
+              <span>
+                <span className="block text-sm font-medium">Aviso por voz</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Fala "Produto não cadastrado" e "Item avulso"
+                </span>
+              </span>
+              <Switch
+                checked={voiceOn}
+                onCheckedChange={(v) => {
+                  setVoiceEnabled(v);
+                  setVoiceOn(v);
+                  if (v) alertUser("ok", "Aviso por voz ligado");
+                }}
+              />
+            </label>
+
+            <Button
+              variant="outline"
+              className="w-full justify-between"
+              onClick={() => {
+                setSettingsOpen(false);
+                setShortcutsModalOpen(true);
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <Keyboard className="size-4 text-primary" /> Teclas de atalho
+              </span>
+              <kbd className="font-mono text-[10px] text-muted-foreground">
+                {shortcutsConfig.open_shortcuts || "F9"}
+              </kbd>
+            </Button>
+
+            {!isGuest && !store?.isEmployee ? (
+              <Button variant="outline" className="w-full justify-start gap-2" asChild>
+                <Link to="/configuracoes">
+                  <Settings className="size-4" /> Dados da loja, ramo e equipe
+                </Link>
+              </Button>
+            ) : null}
+
+            {isGuest ? (
+              <PixSetupPanel
+                settings={settings}
+                onSave={(values) => {
+                  const saved = saveLocalSettings(values);
+                  setSettings(saved);
+                }}
+              />
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
 
