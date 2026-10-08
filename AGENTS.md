@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep PDV and direct Pix order entry as two modes of the same sales flow; share checkout and receipt actions so both use consistent totals and printing.
