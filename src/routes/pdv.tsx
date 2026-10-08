@@ -50,6 +50,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PixQr, usePixQr } from "@/components/PixQr";
 import { useSession } from "@/hooks/useSession";
 import { useProfile } from "@/hooks/useStore";
@@ -155,6 +156,9 @@ function PdvPage() {
   // Card / Modal de Pagamento ao Finalizar
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [cashGiven, setCashGiven] = useState("");
+  const [section, setSection] = useState<"pdv" | "ordem">("pdv");
+  const [orderDescription, setOrderDescription] = useState("");
+  const [orderAmount, setOrderAmount] = useState("");
 
   // Modal de Pesagem (Mercado)
   const [scaleItemName, setScaleItemName] = useState("");
@@ -202,11 +206,20 @@ function PdvPage() {
   const cashInputRef = useRef<HTMLInputElement>(null);
 
   // Cálculos financeiros
-  const subtotal = lines.reduce((acc, line) => acc + line.qty * line.price, 0);
-  const serviceFee = currentBranch === "restaurante" && hasServiceFee ? subtotal * 0.1 : 0;
-  const discountValue = (subtotal * discountPercent) / 100;
+  const saleLines: CartLine[] = section === "ordem"
+    ? [{ key: "ordem", name: orderDescription.trim() || "Ordem de pagamento", qty: 1, price: parseAmount(orderAmount) }]
+    : lines;
+  const subtotal = saleLines.reduce((acc, line) => acc + line.qty * line.price, 0);
+  const serviceFee = section === "pdv" && currentBranch === "restaurante" && hasServiceFee ? subtotal * 0.1 : 0;
+  const discountValue = section === "pdv" ? (subtotal * discountPercent) / 100 : 0;
   const total = Math.max(0, subtotal + serviceFee - discountValue);
-  const qtyCount = lines.reduce((acc, line) => acc + line.qty, 0);
+  const qtyCount = saleLines.reduce((acc, line) => acc + line.qty, 0);
+
+  const checkoutPayload = method === "pix" && profile?.pix_key && total > 0
+    ? buildPixPayload({ key: profile.pix_key, keyType: profile.pix_key_type,
+        merchantName: profile.merchant_name || profile.store_name, city: profile.city,
+        amount: total, txid: "PEDIDO" })
+    : null;
 
   // Subtotais específicos para oficina
   const totalServices = lines
@@ -434,18 +447,19 @@ function PdvPage() {
 
   // Ação de iniciar fechamento (Abre o Card de Pagamento)
   function handleInitiateCheckout() {
-    if (!lines.length) {
-      toast.error("Adicione itens, serviços ou peças para continuar.");
+    if (total <= 0) {
+      toast.error("Informe um valor ou adicione itens para continuar.");
       return;
     }
 
     // Se for orçamento puro em oficina, salva direto sem exigir pagamento
-    if (currentBranch === "servicos" && serviceDocType === "orcamento") {
+    if (section === "pdv" && currentBranch === "servicos" && serviceDocType === "orcamento") {
       void processSaveOrder("orcamento");
       return;
     }
 
     // Abre o card dedicado de pagamento
+    if (section === "ordem") setMethod("pix");
     setPaymentModalOpen(true);
   }
 
@@ -598,7 +612,7 @@ function PdvPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [shortcutsConfig, lines, total, busy, currentBranch, code, paymentModalOpen, method]);
+  }, [shortcutsConfig, lines, total, busy, currentBranch, code, paymentModalOpen, method, section, orderDescription, profile, user, store]);
 
   // Salvar pedido no banco ou localmente
   async function processSaveOrder(paymentMethodChosen: string) {
@@ -614,11 +628,11 @@ function PdvPage() {
 
     setBusy(true);
     try {
-      const items: OrderItem[] = lines.map(({ name, qty, price, note, item_type }) => {
+      const items: OrderItem[] = saleLines.map(({ name, qty, price, note, item_type }) => {
         const typePrefix =
-          currentBranch === "servicos" && item_type === "servico"
+          section === "pdv" && currentBranch === "servicos" && item_type === "servico"
             ? "[SERVIÇO] "
-            : currentBranch === "servicos" && item_type === "peca"
+            : section === "pdv" && currentBranch === "servicos" && item_type === "peca"
               ? "[PEÇA] "
               : "";
         return {
@@ -629,7 +643,9 @@ function PdvPage() {
       });
 
       const parts: string[] = [];
-      if (currentBranch === "servicos") {
+      if (section === "ordem") {
+        parts.push("ORDEM DE PAGAMENTO");
+      } else if (currentBranch === "servicos") {
         parts.push(serviceDocType === "orcamento" ? "ORÇAMENTO" : "ORDEM DE SERVIÇO");
         if (vehicleEquipment.trim()) parts.push(`Veículo/Equip: ${vehicleEquipment.trim()}`);
         if (technicianName.trim()) parts.push(`Mecânico: ${technicianName.trim()}`);
@@ -688,6 +704,8 @@ function PdvPage() {
           updated_at: now,
         };
         setResult(order);
+        setOrderAmount("");
+        setOrderDescription("");
         setPaymentModalOpen(false);
         setLines([]);
         setCustomer("");
@@ -697,10 +715,12 @@ function PdvPage() {
         return;
       }
 
+      const ownerId = store?.ownerId ?? user?.id;
+      if (!ownerId) throw new Error("Sessão expirada");
       const { data: created, error } = await supabase
         .from("orders")
         .insert({
-          user_id: store?.ownerId ?? user!.id,
+          user_id: ownerId,
           customer_name: finalCustomer,
           customer_contact: customerContact.trim() || null,
           description,
@@ -710,10 +730,11 @@ function PdvPage() {
           status: paymentMethodChosen === "orcamento" ? "aberto" : "aberto",
           notes: serviceDiagnosis.trim() || null,
         })
-        .select("id, order_number")
+        .select("*")
         .single();
       if (error) throw error;
 
+      let savedPayload: string | null = null;
       if (paymentMethodChosen === "pix" && profile.pix_key) {
         const payload = buildPixPayload({
           key: profile.pix_key,
@@ -724,7 +745,9 @@ function PdvPage() {
           txid: `PED${String(created.order_number).padStart(5, "0")}`,
           description,
         });
-        await supabase.from("orders").update({ pix_payload: payload }).eq("id", created.id);
+        const { error: pixError } = await supabase.from("orders").update({ pix_payload: payload }).eq("id", created.id);
+        if (pixError) throw pixError;
+        savedPayload = payload;
       }
 
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -734,7 +757,9 @@ function PdvPage() {
       setCustomerContact("");
       setDiscountPercent(0);
       setCashGiven("");
-      navigate({ to: "/pedidos/$id", params: { id: created.id } });
+      setResult({ ...created, pix_payload: savedPayload } as unknown as Order);
+      setOrderAmount("");
+      setOrderDescription("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível concluir.");
     } finally {
@@ -823,11 +848,40 @@ function PdvPage() {
 
       {/* Corpo Principal do PDV / Gerador de Pedidos */}
       <main className="mx-auto max-w-7xl px-4 pt-4">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+          <Tabs value={section} onValueChange={(value) => {
+            if (value === "pdv" || value === "ordem") setSection(value);
+          }}>
+            <TabsList>
+              <TabsTrigger value="pdv"><ShoppingCart className="mr-2 size-4" />PDV</TabsTrigger>
+              <TabsTrigger value="ordem"><QrCode className="mr-2 size-4" />Ordem Pix</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="text-foreground">01 {section === "pdv" ? "Itens" : "Ordem"}</span>
+            <ArrowRight className="size-3" /><span>02 Pagamento</span>
+            <ArrowRight className="size-3" /><span>03 Impressão</span>
+          </div>
+        </div>
         <div className="grid gap-5 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_390px]">
           {/* ============================================================ */}
           {/* COLUNA ESQUERDA: LAYOUT ADAPTADO AO RAMO                     */}
           {/* ============================================================ */}
-          <section className="space-y-4">
+          <section className="min-w-0 space-y-4">
+            {section === "ordem" ? (
+              <div className="space-y-5 py-3">
+                <h1 className="text-xl font-semibold">Ordem de pagamento Pix</h1>
+                <div className="space-y-2">
+                  <Label htmlFor="order-description">Referente a</Label>
+                  <Input id="order-description" value={orderDescription} onChange={(event) => setOrderDescription(event.target.value)} placeholder="Descrição da cobrança" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="order-amount">Valor da ordem (R$)</Label>
+                  <Input id="order-amount" inputMode="decimal" value={orderAmount} onChange={(event) => setOrderAmount(event.target.value)} placeholder="0,00" />
+                </div>
+              </div>
+            ) : <>
+            <h1 className="text-xl font-semibold">PDV · Itens da venda</h1>
             {/* ---------------------------------------------------------- */}
             {/* RAMO 1: OFICINA MECÂNICA / ASSISTÊNCIA / SERVIÇOS          */}
             {/* ---------------------------------------------------------- */}
@@ -1362,18 +1416,19 @@ function PdvPage() {
               )}
             </div>
 
+            </>}
           </section>
 
           {/* ============================================================ */}
           {/* COLUNA DIREITA: RESUMO FINANCEIRO & BOTÃO DE FINALIZAR       */}
           {/* ============================================================ */}
           <aside className="space-y-4 lg:sticky lg:top-16 lg:self-start">
-            <div className="rounded-xl border border-border/60 bg-card/40 p-4 backdrop-blur-sm space-y-4">
+            <div className="space-y-4 border-l border-border/60 pl-4">
               {/* Display do Total Geral */}
               <div className="rounded-lg border border-border/50 bg-secondary/30 p-3.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>
-                    {currentBranch === "servicos" && serviceDocType === "orcamento"
+                    {section === "pdv" && currentBranch === "servicos" && serviceDocType === "orcamento"
                       ? "Valor do Orçamento"
                       : "Total da Cobrança"}
                   </span>
@@ -1430,21 +1485,21 @@ function PdvPage() {
               <div className="space-y-2 pt-2 border-t border-border/50">
                 <Button
                   className="w-full h-11 text-sm font-semibold tracking-wide justify-between"
-                  disabled={busy || !lines.length}
+                  disabled={busy || total <= 0}
                   onClick={handleInitiateCheckout}
                 >
                   {busy ? (
                     <span className="flex items-center gap-2 mx-auto">
                       <Loader2 className="size-4 animate-spin" /> Concluindo...
                     </span>
-                  ) : currentBranch === "servicos" && serviceDocType === "orcamento" ? (
+                  ) : section === "pdv" && currentBranch === "servicos" && serviceDocType === "orcamento" ? (
                     <>
                       <span>Salvar & Emitir Orçamento</span>
                       <FileText className="size-4" />
                     </>
                   ) : (
                     <>
-                      <span>Finalizar e Pagar</span>
+                      <span>{section === "ordem" ? "Gerar ordem Pix" : "Finalizar pagamento"}</span>
                       <kbd className="rounded bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[11px]">
                         F8
                       </kbd>
@@ -1474,22 +1529,6 @@ function PdvPage() {
               </div>
             </div>
 
-            {/* Resultado de Cobrança Pix para Visitante */}
-            {result && profile ? (
-              <GuestResult
-                order={result}
-                profile={profile}
-                onClose={() => {
-                  setResult(null);
-                  if (currentBranch === "servicos") {
-                    serviceNameRef.current?.focus();
-                  } else {
-                    codeRef.current?.focus();
-                  }
-                }}
-                onSignIn={signInWithGoogle}
-              />
-            ) : null}
           </aside>
         </div>
       </main>
@@ -1497,38 +1536,50 @@ function PdvPage() {
       {/* ============================================================ */}
       {/* CARD / MODAL DEDICADO DE FORMA DE PAGAMENTO AO FINALIZAR     */}
       {/* ============================================================ */}
+      <Dialog open={Boolean(result)} onOpenChange={(open) => { if (!open) setResult(null); }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ordem emitida · Impressão</DialogTitle>
+            <DialogDescription>{result?.customer_name}</DialogDescription>
+          </DialogHeader>
+          {result && profile ? <GuestResult order={result} profile={profile} isGuest={isGuest} onClose={() => setResult(null)} onSignIn={signInWithGoogle} /> : null}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
-        <DialogContent className="max-w-md p-6">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto p-5 sm:max-w-2xl">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="flex items-center gap-2 text-lg">
                 <Coins className="size-5 text-primary" />
-                <span>Escolha a Forma de Pagamento</span>
+                <span>Finalizar pagamento</span>
               </DialogTitle>
             </div>
             <DialogDescription className="text-xs">
-              Selecione com as teclas <kbd className="font-mono text-foreground font-bold">1</kbd>, <kbd className="font-mono text-foreground font-bold">2</kbd>, <kbd className="font-mono text-foreground font-bold">3</kbd> ou <kbd className="font-mono text-foreground font-bold">4</kbd>
+              {customer.trim() || "Cliente"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
             {/* Total Destacado */}
-            <div className="rounded-xl border border-primary/30 bg-primary/10 p-3.5 text-center">
+            <div className="border-b border-border pb-4 text-center">
               <p className="text-xs text-muted-foreground font-medium">Total a Pagar</p>
               <p className="text-3xl font-mono font-extrabold text-primary">{formatBRL(total)}</p>
             </div>
 
             {/* Grid de Formas de Pagamento */}
-            <div className="grid gap-2">
-              {PAYMENT_OPTIONS.map((opt) => {
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_OPTIONS.filter((option) => section !== "ordem" || option.id === "pix").map((opt) => {
                 const Icon = opt.icon;
                 const isSelected = method === opt.id;
                 return (
-                  <button
+                  <Button
+                    variant="outline"
+                    aria-pressed={isSelected}
                     key={opt.id}
                     type="button"
                     onClick={() => setMethod(opt.id)}
-                    className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all ${
+                    className={`flex items-center justify-between h-auto min-w-0 whitespace-normal rounded-lg border p-3 text-left transition-all ${
                       isSelected
                         ? "border-primary bg-primary/15 text-foreground ring-1 ring-primary shadow-xs"
                         : "border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
@@ -1544,7 +1595,7 @@ function PdvPage() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold leading-tight text-foreground">{opt.label}</p>
-                        <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
+                        
                       </div>
                     </div>
 
@@ -1557,10 +1608,27 @@ function PdvPage() {
                     >
                       {opt.hotkey}
                     </kbd>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
+
+            {method === "pix" ? (
+              <div className="flex flex-col items-center gap-3 py-2">
+                {checkoutPayload ? <>
+                  <PixQr payload={checkoutPayload} className="size-52 max-w-full rounded-lg" />
+                  <p className="text-sm font-medium">{profile?.merchant_name || profile?.store_name}</p>
+                  <Button variant="outline" size="sm" onClick={async () => {
+                    try { await navigator.clipboard.writeText(checkoutPayload); toast.success("Pix copiado."); }
+                    catch { toast.error("Não foi possível copiar o Pix."); }
+                  }}><Copy className="size-4" />Copiar Pix</Button>
+                  <p className="text-xs text-warning">Aguardando pagamento · confirmação manual</p>
+                </> : <>
+                  <p className="text-sm text-warning">Cadastre a chave Pix da loja para gerar o QR Code.</p>
+                  <Button variant="outline" onClick={() => { setPaymentModalOpen(false); setSettingsOpen(true); }}><Settings className="size-4" />Cadastrar chave Pix</Button>
+                </>}
+              </div>
+            ) : null}
 
             {/* Campo Opcional de Dinheiro Recebido para Troco */}
             {method === "dinheiro" ? (
@@ -1602,7 +1670,7 @@ function PdvPage() {
                 type="button"
                 size="default"
                 className="gap-2 font-semibold"
-                disabled={busy}
+                disabled={busy || (method === "pix" && !checkoutPayload)}
                 onClick={() => processSaveOrder(method)}
               >
                 {busy ? (
@@ -1611,7 +1679,7 @@ function PdvPage() {
                   </>
                 ) : (
                   <>
-                    <span>Confirmar e Emitir</span>
+                    <span>Emitir ordem e imprimir</span>
                     <kbd className="rounded bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[10px]">
                       Enter
                     </kbd>
@@ -1856,7 +1924,9 @@ function GuestResult({
   profile,
   onClose,
   onSignIn,
+  isGuest,
 }: {
+  isGuest: boolean;
   order: Order;
   profile: Profile;
   onClose: () => void;
@@ -1870,7 +1940,7 @@ function GuestResult({
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card/50 p-4 space-y-3 backdrop-blur-sm">
+    <div className="space-y-4">
       <div className="flex items-center justify-between border-b border-border/40 pb-2">
         <h2 className="font-semibold text-xs">
           Venda nº {String(order.order_number).padStart(4, "0")} Gerada
@@ -1880,9 +1950,10 @@ function GuestResult({
         </Button>
       </div>
 
+      <p className="text-center font-mono text-3xl font-bold text-primary">{formatBRL(order.amount)}</p>
       {order.pix_payload ? (
         <div className="flex flex-col items-center gap-2 py-1">
-          <PixQr payload={order.pix_payload} className="size-40 rounded-lg bg-white p-2.5 shadow-sm" />
+          <PixQr payload={order.pix_payload} className="size-52 rounded-lg" />
           <Button
             size="sm"
             variant="outline"
@@ -1926,12 +1997,12 @@ function GuestResult({
         </Button>
       </div>
 
-      <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-[11px] text-muted-foreground space-y-1.5">
-        <p>Venda salva localmente. Crie sua conta para sincronizar pedidos na nuvem.</p>
+      {isGuest ? <div className="border-t border-border pt-3 text-xs text-muted-foreground space-y-2">
+        <p>Ordem gerada neste aparelho, sem histórico na conta.</p>
         <Button className="w-full h-7 text-xs" size="sm" onClick={onSignIn}>
           <UserPlus className="size-3 mr-1" /> Criar conta com Google
         </Button>
-      </div>
+      </div> : <Button variant="outline" className="w-full" asChild><Link to="/pedidos/$id" params={{ id: order.id }}>Abrir pedido<ArrowRight className="size-4" /></Link></Button>}
     </div>
   );
 }
